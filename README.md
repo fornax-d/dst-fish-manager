@@ -62,13 +62,12 @@ dst-fish-manager/
 2. **Event-Driven Architecture** - Decoupled communication via event bus
 3. **State Management** - Centralized, thread-safe state management
 4. **Modular Services** - Service layer for external integrations
-5. **Component-Based UI** - Reusable UI components
-6. **Background Coordination** - Organized background task handling
+5. **Background Coordination** - Organized background task handling
 
 ## Running
 
 ### Prerequisites
-- **Fish Shell**: Installation script requires Fish shell
+- **Fish Shell**: Scripts require Fish shell
 - **PATH Configuration**: Ensure `~/.local/bin` is in your PATH
 
 ### Method 1: Using the wrapper script (Recommended)
@@ -91,37 +90,15 @@ fish ~/.local/bin/dst-tui
 
 ### System Requirements
 - **Linux**: systemd-based distribution (Ubuntu, Debian, Fedora, Arch)
-- **Fish Shell**: Required for installation scripts (recommended shell)
+- **Fish Shell**
 - **Python 3.8+**: Core runtime environment
 
-### Installing Fish Shell
-
-#### Ubuntu/Debian
-```bash
-sudo apt update
-sudo apt install fish
-```
-
-#### Fedora/RHEL/CentOS
-```bash
-sudo dnf install fish
-```
-
-#### Arch Linux
-```bash
-sudo pacman -S fish
-```
-
-#### Set Fish as Default Shell (Optional)
-```bash
-chsh -s $(which fish)
-```
 
 ## Installation
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/fornax-d/dst-fish-manager.git
 cd dst-fish-manager
 ```
 
@@ -136,13 +113,12 @@ sudo apt install python3-curses  # For Debian/Ubuntu
 # sudo dnf install python3-curses
 ```
 
-3. Run automated installation (uses Fish shell):
+3. Automated installation:
 ```bash
-# Make sure fish is installed, then run:
 ./install.fish
 ```
 
-**OR** Manual installation (if you prefer not to use Fish):
+**OR** Manual installation:
 ```bash
 # Create directories
 mkdir -p ~/.config/systemd/user
@@ -156,11 +132,6 @@ cp .local/bin/dst-* ~/.local/bin/
 
 # Set permissions
 chmod +x ~/.local/bin/dst-*
-
-# Add ~/.local/bin to PATH (for bash/zsh)
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-# or for zsh:
-# echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 
 # Reload systemd
 systemctl --user daemon-reload
@@ -178,8 +149,8 @@ dst-tui --help
 ## Configuration
 
 Edit `~/.config/dontstarve/config` to set:
-- `CLUSTER_NAME`: Your cluster name (or "auto" for auto-detection)
-- `BRANCH`: Game branch (main, beta, staging)
+- `CLUSTER_NAME`: Your cluster name (leave "auto" for auto-detection)
+- `BRANCH`: Game branch (main, beta)
 - `INSTALL_DIR`: DST server installation directory
 - `DONTSTARVE_DIR`: Game saves directory
 
