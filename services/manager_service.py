@@ -3,19 +3,20 @@
 
 """Main manager service that orchestrates all operations."""
 
+import os
+import subprocess
+from pathlib import Path
 from typing import List, Tuple, Dict
 
-from services.game_service import GameService
 from services.systemd_service import SystemDService
 from features.shards.shard_manager import ShardManager
-from utils.config import Shard
+from utils.config import Shard, HOME_DIR
 
 
 class ManagerService:
     """Orchestrates all interactions with systemd and game files."""
 
     def __init__(self):
-        self.game_service = GameService()
         self.systemd_service = SystemDService()
         self.shard_manager = ShardManager()
 
@@ -62,11 +63,34 @@ class ManagerService:
 
     def run_updater(self):
         """Runs the dst-updater script."""
-        return self.game_service.run_updater()
+        possible_paths = [
+            Path(__file__).parent.parent / ".local" / "bin" / "dst-updater",
+            HOME_DIR / ".local" / "bin" / "dst-updater",
+        ]
+
+        updater_path = None
+        for p in possible_paths:
+            if p.is_file() and os.access(p, os.X_OK):
+                updater_path = p
+                break
+
+        if not updater_path:
+            raise FileNotFoundError(
+                f"Updater script not found in any of: {possible_paths}"
+            )
+
+        return subprocess.Popen(
+            [str(updater_path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
 
     def send_command(self, shard_name: str, command: str) -> Tuple[bool, str]:
         """Sends a command to the specified shard's console."""
-        return self.game_service.send_command(shard_name, command)
+        from features.chat.chat_manager import ChatManager
+
+        return ChatManager.send_command(shard_name, command)
 
     def send_chat_message(self, shard_name: str, message: str) -> Tuple[bool, str]:
         """Sends a chat message using c_announce() command."""

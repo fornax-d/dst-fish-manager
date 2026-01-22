@@ -5,7 +5,6 @@
 
 import logging
 import logging.handlers
-import threading
 from collections import deque
 from pathlib import Path
 from typing import Optional, List
