@@ -27,14 +27,16 @@ class ServerState(Enum):
 class DiscordBotManager:
     """Manages Discord bot integration with DST Fish Manager."""
 
-    def __init__(self, manager_service):
+    def __init__(self, manager_service, event_bus=None):
         """
         Initialize Discord bot manager.
 
         Args:
             manager_service: The main manager service instance
+            event_bus: Optional event bus for chat message subscription
         """
         self.manager_service = manager_service
+        self.event_bus = event_bus
 
         # Bot configuration
         self.bot_token = os.getenv("DISCORD_BOT_TOKEN")
@@ -54,8 +56,8 @@ class DiscordBotManager:
 
         # Bot state
         self.server_state = ServerState.STOPPED
-        self.previous_chat_log_count = 0
-        self.just_started = False
+        self.previous_chat_messages = []
+        self.chat_event_subscription_id = None
 
         # Initialize Discord client
         intents = discord.Intents.default()
@@ -165,7 +167,69 @@ class DiscordBotManager:
     async def stop(self):
         """Stop the Discord bot."""
         discord_logger.info("Stopping Discord bot")
+        # Unsubscribe from chat events
+        if self.event_bus and self.chat_event_subscription_id:
+            from core.events.bus import EventType
+            self.event_bus.unsubscribe(EventType.CHAT_MESSAGE, self.chat_event_subscription_id)
         await self.client.close()
+
+    def set_event_bus(self, event_bus):
+        """Set the event bus and subscribe to chat events."""
+        self.event_bus = event_bus
+        if event_bus:
+            from core.events.bus import EventType
+            self.chat_event_subscription_id = event_bus.subscribe(EventType.CHAT_MESSAGE, self._on_chat_message_event)
+            discord_logger.info("Subscribed to CHAT_MESSAGE events from TUI")
+
+    def _on_chat_message_event(self, event):
+        """Handle chat message events from the TUI's background coordinator."""
+        if not self.chat_channel_id:
+            return
+
+        try:
+            chat_logs = event.data
+            if not chat_logs or len(chat_logs) < 2:
+                return
+
+            # Find new messages by comparing to previous state
+            new_messages = []
+            for msg in chat_logs:
+                if msg not in self.previous_chat_messages:
+                    # Filter out Discord messages to prevent echo loop
+                    if not msg.startswith("[Discord]"):
+                        new_messages.append(msg)
+
+            if new_messages:
+                discord_logger.info(f"Detected {len(new_messages)} new game chat message(s) to relay")
+                # Schedule async send in the bot's event loop
+                if self.client and self.client.is_ready():
+                    import asyncio
+                    asyncio.run_coroutine_threadsafe(
+                        self._send_chat_to_discord(new_messages),
+                        self.client.loop
+                    )
+
+            # Update previous messages (keep last 100)
+            self.previous_chat_messages = chat_logs[-100:]
+
+        except Exception as e:
+            discord_logger.error(f"Error handling chat message event: {e}")
+
+    async def _send_chat_to_discord(self, messages):
+        """Send game chat messages to Discord channel."""
+        try:
+            channel = self.client.get_channel(int(self.chat_channel_id))
+            if not channel:
+                discord_logger.warning(f"Could not find Discord channel {self.chat_channel_id}")
+                return
+
+            for msg in messages:
+                if msg.strip():
+                    await channel.send(msg)
+                    discord_logger.info(f"Sent game chat to Discord: {msg}")
+
+        except Exception as e:
+            discord_logger.error(f"Error sending chat to Discord: {e}")
 
     async def _on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         """Handle app command errors."""
@@ -231,10 +295,20 @@ class DiscordClient(discord.Client):
             )
         )
 
-        # Start chat log monitoring
-        if not self.send_chat_log.is_running():
-            discord_logger.info("Starting chat log monitoring")
-            self.send_chat_log.start()
+        # Update server state based on actual running shards
+        shards = self.bot_manager.manager_service.get_shards()
+        running_shards = [s for s in shards if s.is_running]
+        if running_shards:
+            self.bot_manager.server_state = ServerState.RUNNING
+            discord_logger.info(f"Server state set to RUNNING ({len(running_shards)} shard(s) active)")
+        else:
+            discord_logger.info("Server state remains STOPPED (no running shards)")
+
+        # Chat relay is handled by event subscription from TUI
+        if self.bot_manager.event_bus:
+            discord_logger.info("Chat relay configured via event bus subscription")
+        else:
+            discord_logger.warning("Event bus not available - chat relay to Discord will not work until TUI connects it")
 
     async def on_command_error(self, interaction: discord.Interaction, error: Exception):
         """Handle command errors."""
@@ -264,8 +338,10 @@ class DiscordClient(discord.Client):
         if (self.bot_manager.chat_channel_id and
             message.channel.id == int(self.bot_manager.chat_channel_id)):
 
+            discord_logger.info(f"Message received in chat channel from {message.author.display_name}, server_state={self.bot_manager.server_state.name}")
+
             if self.bot_manager.server_state == ServerState.STOPPED:
-                discord_logger.debug("Skipping message relay - server is stopped")
+                discord_logger.warning("Skipping message relay - server is stopped")
                 return
 
             # Remove emojis and format message
@@ -284,34 +360,7 @@ class DiscordClient(discord.Client):
 
             discord_logger.info(f"Message relayed to {relay_count} running shard(s)")
 
-    @tasks.loop(seconds=5)
-    async def send_chat_log(self):
-        """Monitor and relay chat logs to Discord."""
-        if not self.bot_manager.chat_channel_id:
-            return
 
-        try:
-            chat_logs = self.bot_manager.manager_service.get_chat_logs(lines=100)
-            current_count = len(chat_logs)
-
-            # Handle initial startup
-            if self.bot_manager.just_started:
-                if self.bot_manager.previous_chat_log_count - current_count > 25:
-                    return
-                self.bot_manager.just_started = False
-                discord_logger.info("Chat log monitoring initialized")
-
-            # Send new messages
-            if current_count > self.bot_manager.previous_chat_log_count:
-                new_messages = chat_logs[self.bot_manager.previous_chat_log_count:]
-                # Chat relay to Discord disabled to reduce spam
-                # Only log locally
-                if len(new_messages) > 0:
-                    discord_logger.info(f"Detected {len(new_messages)} new game chat message(s)")
-
-                self.bot_manager.previous_chat_log_count = current_count
-        except Exception as e:
-            discord_logger.error(f"Error in chat log monitoring: {e}")
 
 
 class PanelMenu(discord.ui.View):

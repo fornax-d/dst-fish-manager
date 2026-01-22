@@ -13,18 +13,27 @@ from utils.logger import discord_logger
 class DiscordService:
     """Service for managing Discord bot lifecycle."""
 
-    def __init__(self, manager_service):
+    def __init__(self, manager_service, event_bus=None):
         """
         Initialize Discord service.
 
         Args:
             manager_service: The main manager service instance
+            event_bus: Optional event bus for chat message events
         """
         self.manager_service = manager_service
+        self.event_bus = event_bus
 
         self.bot_manager: Optional[DiscordBotManager] = None
         self.bot_thread: Optional[threading.Thread] = None
         self.is_running = False
+
+    def set_event_bus(self, event_bus):
+        """Set the event bus for chat message subscription."""
+        self.event_bus = event_bus
+        if self.bot_manager:
+            self.bot_manager.set_event_bus(event_bus)
+            discord_logger.info("Event bus connected to Discord bot")
 
     def start(self):
         """Start the Discord bot in a background thread."""
@@ -34,7 +43,7 @@ class DiscordService:
 
         try:
             discord_logger.info("Starting Discord service")
-            self.bot_manager = DiscordBotManager(self.manager_service)
+            self.bot_manager = DiscordBotManager(self.manager_service, self.event_bus)
 
             # Start bot in background thread
             self.bot_thread = threading.Thread(

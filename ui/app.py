@@ -52,6 +52,10 @@ class TUIApp:
         # Setup event subscriptions
         self._setup_event_subscriptions()
 
+        # Connect event bus to Discord bot if running
+        if self.manager_service.discord_service.is_running:
+            self.manager_service.discord_service.set_event_bus(self.event_bus)
+
         # Initialize curses
         self._setup_curses()
 
@@ -216,6 +220,7 @@ class TUIApp:
 
         self.state_manager.state.ui_state.log_content = log_content
         self.state_manager.state.ui_state.discord_logs_viewer_active = True
+        self.state_manager.state.ui_state.log_viewer_active = False
         # Start at the bottom to show most recent logs
         self.state_manager.state.ui_state.log_scroll_pos = max(0, len(log_content) - 20)
 
@@ -255,6 +260,7 @@ class TUIApp:
         """Handle server update."""
         self.state_manager.state.ui_state.log_content = ["--- Starting Update ---"]
         self.state_manager.state.ui_state.log_viewer_active = True
+        self.state_manager.state.ui_state.discord_logs_viewer_active = False
         self.state_manager.state.ui_state.log_scroll_pos = 0
 
         def update_worker():
@@ -299,6 +305,7 @@ class TUIApp:
         log_content = self.manager_service.get_logs(shard_name, lines=200).split("\n")
         self.state_manager.state.ui_state.log_content = log_content
         self.state_manager.state.ui_state.log_viewer_active = True
+        self.state_manager.state.ui_state.discord_logs_viewer_active = False
         self.state_manager.state.ui_state.log_scroll_pos = 0
 
     def _on_shard_refresh(self, event: Event) -> None:
