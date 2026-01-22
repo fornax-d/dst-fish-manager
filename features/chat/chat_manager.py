@@ -4,6 +4,8 @@
 """Chat manager for handling game chat functionality."""
 
 import collections
+import subprocess
+import shlex
 from typing import List
 
 from utils.config import HOME_DIR, config_manager, get_game_config
@@ -69,11 +71,9 @@ class ChatManager:
             return False, f"FIFO for shard '{shard_name}' not found at {fifo_path}"
 
         try:
-            import subprocess
-            import shlex
-
-            shell_cmd = f"echo {shlex.quote(command)} > {shlex.quote(str(fifo_path))}"
-            subprocess.run(shell_cmd, shell=True, check=True, timeout=5)
+            echo_cmd = ["echo", command]
+            with open(fifo_path, "w") as fifo:
+                subprocess.run(echo_cmd, stdout=fifo, check=True, timeout=5)
             return True, "Command sent successfully."
         except Exception as e:
             return False, f"Failed to send command to FIFO: {e}"

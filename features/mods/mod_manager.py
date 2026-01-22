@@ -3,6 +3,7 @@
 
 """Mod management feature."""
 
+import logging
 import re
 from pathlib import Path
 from typing import Dict, List
@@ -73,8 +74,12 @@ class ModManager:
             name_match = re.search(r'name\s*=\s*"(.*?)"', content)
             if name_match:
                 return name_match.group(1)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.getLogger(__name__).debug(
+                "Failed to read mod info from %s: %s", 
+                info_path, 
+                e
+            )
         return workshop_id
 
     def toggle_mod(

@@ -5,6 +5,7 @@
 
 from enum import Enum
 from typing import Any, Callable, Dict, List
+import logging
 import threading
 
 
@@ -62,8 +63,12 @@ class EventBus:
         for callback in subscribers:
             try:
                 callback(event)
-            except Exception:
-                pass  # Don't let subscriber errors break the bus
+            except Exception as e:
+                logging.getLogger(__name__).warning(
+                    "Event subscriber %s raised exception: %s", 
+                    callback.__name__, 
+                    e
+                )
 
 
 # Global event bus instance
