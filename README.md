@@ -1,74 +1,14 @@
 # DST Fish Manager 🐟
 
-## Structure
-
-```
-dst-fish-manager/
-├── ui/                        # UI layer
-│   ├── app.py                # Main TUI application
-│   ├── components/           # UI components
-│   │   ├── windows.py        # Window management
-│   │   ├── popups.py        # Popup components
-│   │   └── settings.py      # Settings management
-│   ├── input/                # Input handling
-│   │   └── handler.py        # Input handler
-│   └── rendering/            # Rendering system
-│       ├── renderer.py        # Main renderer
-│       └── themes.py         # Color themes
-├── core/                     # Core functionality
-│   ├── state/                # State management
-│   │   └── app_state.py     # Application state
-│   ├── events/               # Event system
-│   │   └── bus.py           # Event bus
-│   └── background/           # Background tasks
-│       └── coordinator.py    # Task coordinator
-├── features/                 # Feature modules
-│   ├── mods/                # Mod management
-│   │   └── mod_manager.py    # Mod manager
-│   ├── chat/                # Chat management
-│   │   └── chat_manager.py    # Chat manager
-│   ├── status/              # Status monitoring
-│   │   └── status_manager.py  # Status manager
-│   ├── shards/              # Shard management
-│   │   └── shard_manager.py   # Shard manager
-│   └── cluster/             # Cluster management
-│       └── cluster_manager.py # Cluster manager
-├── services/                 # Service layer
-│   ├── manager_service.py    # Main manager service
-│   ├── game_service.py      # Game communication
-│   └── systemd_service.py   # SystemD integration
-├── utils/                    # Utilities
-│   ├── config.py            # Configuration
-│   └── helpers.py           # Helper functions
-├── .config/                  # Configuration files
-│   ├── systemd/user/         # SystemD service files
-│   │   ├── dontstarve.target
-│   │   └── dontstarve@.service
-│   └── dontstarve/          # DST configuration
-│       ├── config
-│       └── shards.conf
-├── .local/bin/               # Executable scripts
-│   ├── dst-tui              # Main TUI wrapper
-│   ├── dst-server           # Server management script
-│   └── dst-updater          # Update script
-├── install.fish             # Installation script (Fish shell)
-├── DOCUMENTATION.md         # Complete technical documentation
-└── main.py                  # Entry point
-```
-
 ## FEATURES
 
-1. **Separation of Concerns** - Clear separation between UI, state, and business logic
+1. **Separation of Concerns** - Separation between UI, state, and business logic
 2. **Event-Driven Architecture** - Decoupled communication via event bus
-3. **State Management** - Centralized, thread-safe state management
+3. **State Management** - Centralized state management
 4. **Modular Services** - Service layer for external integrations
 5. **Background Coordination** - Organized background task handling
 
 ## Running
-
-### Prerequisites
-- **Fish Shell**: Scripts require Fish shell
-- **PATH Configuration**: Ensure `~/.local/bin` is in your PATH
 
 ### Method 1: Using the wrapper script (Recommended)
 ```bash
@@ -81,16 +21,11 @@ cd dst-fish-manager
 python main.py
 ```
 
-### Method 3: Using Fish wrapper directly
-```bash
-fish ~/.local/bin/dst-tui
-```
-
 ## Requirements
 
 ### System Requirements
 - **Linux**: systemd-based distribution (Ubuntu, Debian, Fedora, Arch)
-- **Fish Shell**
+- **Fish Shell** 🐠
 - **Python 3.8+**: Core runtime environment
 
 
