@@ -6,22 +6,12 @@
 import asyncio
 import os
 from typing import Optional, Dict, Any
-from enum import Enum
 
 import discord
 from discord import app_commands
-from discord.ext import commands, tasks
+from discord.ext import commands
 
 from utils.logger import discord_logger
-
-
-class ServerState(Enum):
-    """Server state enumeration."""
-    STARTING = 1
-    RUNNING = 2
-    STOPPING = 3
-    STOPPED = 4
-    RESTARTING = 5
 
 
 class DiscordBotManager:
@@ -54,8 +44,7 @@ class DiscordBotManager:
         if self.chat_channel_id:
             discord_logger.info(f"Chat relay channel ID: {self.chat_channel_id}")
 
-        # Bot state
-        self.server_state = ServerState.STOPPED
+        # Chat relay state
         self.previous_chat_messages = []
         self.chat_event_subscription_id = None
 
@@ -304,15 +293,6 @@ class DiscordClient(discord.Client):
             )
         )
 
-        # Update server state based on actual running shards
-        shards = self.bot_manager.manager_service.get_shards()
-        running_shards = [s for s in shards if s.is_running]
-        if running_shards:
-            self.bot_manager.server_state = ServerState.RUNNING
-            discord_logger.info(f"Server state set to RUNNING ({len(running_shards)} shard(s) active)")
-        else:
-            discord_logger.info("Server state remains STOPPED (no running shards)")
-
         # Chat relay is handled by event subscription from TUI
         if self.bot_manager.event_bus:
             discord_logger.info("Chat relay configured via event bus subscription")
@@ -347,11 +327,6 @@ class DiscordClient(discord.Client):
         if (self.bot_manager.chat_channel_id and
             message.channel.id == int(self.bot_manager.chat_channel_id)):
 
-            if self.bot_manager.server_state == ServerState.STOPPED:
-                discord_logger.warning("Skipping message relay - server is stopped")
-                return
-
-            # Remove emojis and format message
             msg = message.content
             full_message = f"@{message.author.display_name}: {msg}"
 
@@ -395,7 +370,6 @@ class PanelMenu(discord.ui.View):
         if success:
             discord_logger.info("Server startup command executed successfully")
             await interaction.followup.send("Server startup initiated...", ephemeral=True)
-            self.bot_manager.server_state = ServerState.RUNNING
         else:
             discord_logger.error(f"Server startup failed: {stderr}")
             await interaction.followup.send(f"Failed to start server: {stderr}", ephemeral=True)
@@ -425,15 +399,12 @@ class PanelMenu(discord.ui.View):
         )
         await asyncio.sleep(5)
 
-        self.bot_manager.server_state = ServerState.STOPPING
-
         shards = self.bot_manager.manager_service.get_shards()
         success, stdout, stderr = self.bot_manager.manager_service.control_all_shards("stop", shards)
 
         if success:
             discord_logger.info("Server shutdown command executed successfully")
             await interaction.followup.send("Server shutdown initiated...", ephemeral=True)
-            self.bot_manager.server_state = ServerState.STOPPED
         else:
             discord_logger.error(f"Server shutdown failed: {stderr}")
             await interaction.followup.send(f"Failed to stop server: {stderr}", ephemeral=True)
@@ -463,16 +434,12 @@ class PanelMenu(discord.ui.View):
         )
         await asyncio.sleep(5)
 
-        self.bot_manager.server_state = ServerState.RESTARTING
-
         shards = self.bot_manager.manager_service.get_shards()
         success, stdout, stderr = self.bot_manager.manager_service.control_all_shards("restart", shards)
 
         if success:
             discord_logger.info("Server restart command executed successfully")
             await interaction.followup.send("Server restart initiated...", ephemeral=True)
-            await asyncio.sleep(30)
-            self.bot_manager.server_state = ServerState.RUNNING
         else:
             discord_logger.error(f"Server restart failed: {stderr}")
             await interaction.followup.send(f"Failed to restart server: {stderr}", ephemeral=True)
