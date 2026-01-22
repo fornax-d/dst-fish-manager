@@ -19,6 +19,9 @@ class ManagerService:
         self.systemd_service = SystemDService()
         self.shard_manager = ShardManager()
 
+        # Discord service (lazy initialization)
+        self._discord_service = None
+
     def get_shards(self) -> List[Shard]:
         """
         Reads desired shards from the config file and gets their current status.
@@ -82,3 +85,21 @@ class ManagerService:
         from features.status.status_manager import StatusManager
 
         return StatusManager.request_status_update(shard_name)
+
+    @property
+    def discord_service(self):
+        """Lazy initialization of Discord service."""
+        if self._discord_service is None:
+            from services.discord_service import DiscordService
+            self._discord_service = DiscordService(self)
+        return self._discord_service
+
+    def start_discord_bot(self):
+        """Start the Discord bot if enabled."""
+        if self.discord_service.is_enabled():
+            self.discord_service.start()
+
+    def stop_discord_bot(self):
+        """Stop the Discord bot."""
+        if self._discord_service:
+            self.discord_service.stop()

@@ -18,11 +18,11 @@ from ui.rendering.renderer import Renderer
 class TUIApp:
     """Main TUI application class."""
 
-    def __init__(self, stdscr):
+    def __init__(self, stdscr, manager_service=None):
         self.stdscr = stdscr
         self.state_manager = StateManager()
         self.event_bus = EventBus()
-        self.manager_service = ManagerService()
+        self.manager_service = manager_service or ManagerService()
         self.mod_manager = ModManager()
 
         # Setup UI components
@@ -281,10 +281,10 @@ class TUIApp:
         pass
 
 
-def main(stdscr):
+def main(stdscr, manager_service=None):
     """Main entry point."""
     try:
-        app = TUIApp(stdscr)
+        app = TUIApp(stdscr, manager_service)
         app.run()
     except Exception as e:
         # Cleanup and show error
