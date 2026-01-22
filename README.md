@@ -8,27 +8,6 @@
 4. **Modular Services** - Service layer for external integrations
 5. **Background Coordination** - Organized background task handling
 
-## Running
-
-### Method 1: Using the wrapper script (Recommended)
-```bash
-dst-tui
-```
-
-### Method 2: Direct Python execution
-```bash
-cd dst-fish-manager
-python main.py
-```
-
-## Requirements
-
-### System Requirements
-- **Linux**: systemd-based distribution (Ubuntu, Debian, Fedora, Arch)
-- **Fish Shell** 🐠
-- **Python 3.8+**: Core runtime environment
-
-
 ## Installation
 
 1. Clone the repository:
@@ -39,13 +18,15 @@ cd dst-fish-manager
 
 2. Install required dependencies:
 ```bash
-# Ensure Python 3.8+ is installed
+# Ensure Python 3.8+ and fish shell are installed
 python3 --version
+fish --version
 
 # Install system dependencies if needed
-sudo apt install python3-curses  # For Debian/Ubuntu
-# or on Fedora:
-# sudo dnf install python3-curses
+sudo apt install python3-curses fish # For Debian/Ubuntu
+# sudo dnf install python3-curses fish # Fedora
+# sudo pacmn -S python fish # Arch Linux and derivatives
+
 ```
 
 3. Automated installation:
@@ -72,13 +53,17 @@ chmod +x ~/.local/bin/dst-*
 systemctl --user daemon-reload
 ```
 
-4. Verify installation:
-```bash
-# Check if scripts are accessible
-which dst-tui  # Should show ~/.local/bin/dst-tui
+## Running
 
-# Test the application
-dst-tui --help
+### Method 1: Using the wrapper script (Recommended)
+```bash
+dst-tui
+```
+
+### Method 2: Direct Python execution
+```bash
+cd dst-fish-manager
+python main.py
 ```
 
 ## Configuration
