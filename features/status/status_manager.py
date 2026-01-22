@@ -8,7 +8,7 @@ import re
 import time
 from typing import Dict, Optional
 
-from utils.config import config_manager, get_game_config
+from utils.config import get_game_config
 
 
 class StatusManager:
@@ -17,11 +17,11 @@ class StatusManager:
     @staticmethod
     def get_server_status(shard_name: Optional[str] = None) -> Dict:
         from utils.config import read_desired_shards
-        
+
         config = get_game_config()
         cluster_name = config.get("CLUSTER_NAME", "MyDediServer")
         dst_dir = config.get("DONTSTARVE_DIR")
-        
+
         # Get all shards if none specified
         if shard_name is None:
             shard_names = read_desired_shards()
@@ -31,7 +31,7 @@ class StatusManager:
         # Initialize with default values
         combined_status = {
             "season": "Unknown",
-            "day": "Unknown", 
+            "day": "Unknown",
             "days_left": "Unknown",
             "phase": "Unknown",
             "players": [],
@@ -60,7 +60,7 @@ class StatusManager:
                 shard_status = {
                     "season": "Unknown",
                     "day": "Unknown",
-                    "days_left": "Unknown", 
+                    "days_left": "Unknown",
                     "phase": "Unknown",
                     "players": []
                 }

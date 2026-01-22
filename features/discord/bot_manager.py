@@ -5,7 +5,6 @@
 
 import asyncio
 import os
-from typing import Optional, Dict, Any
 
 import discord
 from discord import app_commands
@@ -14,7 +13,7 @@ from discord.ext import commands
 from utils.logger import discord_logger
 
 
-class DiscordBotManager:
+class FallBotManager:
     """Manages Discord bot integration with DST Fish Manager."""
 
     def __init__(self, manager_service, event_bus=None):
@@ -53,7 +52,7 @@ class DiscordBotManager:
         intents.message_content = True
         intents.guilds = True
 
-        self.client = DiscordClient(self, intents=intents)
+        self.client = FallBotClient(self, intents=intents)
         self.tree = app_commands.CommandTree(self.client)
 
         # Setup commands
@@ -253,10 +252,10 @@ class DiscordBotManager:
             loop.close()
 
 
-class DiscordClient(discord.Client):
+class FallBotClient(discord.Client):
     """Custom Discord client."""
 
-    def __init__(self, bot_manager: DiscordBotManager, *args, **kwargs):
+    def __init__(self, bot_manager: FallBotManager, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.bot_manager = bot_manager
         self.synced = False
@@ -339,7 +338,7 @@ class DiscordClient(discord.Client):
 class PanelMenu(discord.ui.View):
     """Discord UI panel for server control."""
 
-    def __init__(self, bot_manager: DiscordBotManager):
+    def __init__(self, bot_manager: FallBotManager):
         super().__init__(timeout=None)
         self.bot_manager = bot_manager
         self.cooldown = commands.CooldownMapping.from_cooldown(

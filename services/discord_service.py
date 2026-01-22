@@ -6,7 +6,7 @@
 import threading
 from typing import Optional
 
-from features.discord.bot_manager import DiscordBotManager
+from features.discord.bot_manager import FallBotManager
 from utils.logger import discord_logger
 
 
@@ -24,7 +24,7 @@ class DiscordService:
         self.manager_service = manager_service
         self.event_bus = event_bus
 
-        self.bot_manager: Optional[DiscordBotManager] = None
+        self.bot_manager: Optional[FallBotManager] = None
         self.bot_thread: Optional[threading.Thread] = None
         self.is_running = False
 
@@ -43,7 +43,7 @@ class DiscordService:
 
         try:
             discord_logger.info("Starting Discord service")
-            self.bot_manager = DiscordBotManager(self.manager_service, self.event_bus)
+            self.bot_manager = FallBotManager(self.manager_service, self.event_bus)
 
             # Start bot in background thread
             self.bot_thread = threading.Thread(

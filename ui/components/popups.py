@@ -7,6 +7,8 @@ import curses
 import curses.textpad
 from typing import Optional, Tuple
 
+from ui.rendering.themes import BoxChars
+
 
 class PopupManager:
     """Manages popup windows for user input."""
@@ -14,20 +16,7 @@ class PopupManager:
     def __init__(self, stdscr, theme):
         self.stdscr = stdscr
         self.theme = theme
-
-        # Box drawing characters
-        self.box_chars = {
-            "tl": "╭",
-            "tr": "╮",
-            "bl": "╰",
-            "br": "╯",
-            "v": "│",
-            "h": "─",
-            "ml": "├",
-            "mr": "┤",
-            "mt": "┬",
-            "mb": "┴",
-        }
+        self.box_chars = BoxChars()
 
     def text_input_popup(self, title: str, width: int = 40) -> Optional[str]:
         """Create a text input popup and return the entered text."""
@@ -208,25 +197,27 @@ class PopupManager:
             if h < 2 or w < 2:
                 return
 
+            chars = self.box_chars.chars
+
             # Draw corners
-            win.addstr(0, 0, self.box_chars["tl"])
-            win.addstr(0, w - 1, self.box_chars["tr"])
-            win.addstr(h - 1, 0, self.box_chars["bl"])
+            win.addstr(0, 0, chars["tl"])
+            win.addstr(0, w - 1, chars["tr"])
+            win.addstr(h - 1, 0, chars["bl"])
             try:
-                win.addstr(h - 1, w - 1, self.box_chars["br"])
+                win.addstr(h - 1, w - 1, chars["br"])
             except curses.error:
                 try:
-                    win.insstr(h - 1, w - 1, self.box_chars["br"])
+                    win.insstr(h - 1, w - 1, chars["br"])
                 except curses.error:
                     pass
 
             # Draw lines
             for x in range(1, w - 1):
-                win.addstr(0, x, self.box_chars["h"])
-                win.addstr(h - 1, x, self.box_chars["h"])
+                win.addstr(0, x, chars["h"])
+                win.addstr(h - 1, x, chars["h"])
             for y in range(1, h - 1):
-                win.addstr(y, 0, self.box_chars["v"])
-                win.addstr(y, w - 1, self.box_chars["v"])
+                win.addstr(y, 0, chars["v"])
+                win.addstr(y, w - 1, chars["v"])
 
             # Draw title
             if title and w > len(title) + 4:
