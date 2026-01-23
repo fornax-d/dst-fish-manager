@@ -3,8 +3,8 @@
 
 """Entry point for the refactored DST Manager."""
 
-import sys
 import curses
+import sys
 from pathlib import Path
 
 # Add project root to path
@@ -12,9 +12,9 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Load environment variables from .env file
-from utils.env_loader import load_env_file  # noqa: E402
-from ui.app import main  # noqa: E402
 from services.manager_service import ManagerService  # noqa: E402
+from ui.app import main  # noqa: E402
+from utils.env_loader import load_env_file  # noqa: E402
 
 load_env_file()
 
@@ -23,12 +23,6 @@ if __name__ == "__main__":
     manager_service = ManagerService()
 
     try:
-        # Start Discord bot in background if enabled
-        if manager_service.discord_service.is_enabled():
-            manager_service.start_discord_bot()
-        else:
-            print("Discord bot is not enabled (no token found)")
-
         # Run the TUI application
         curses.wrapper(lambda stdscr: main(stdscr, manager_service))
     except KeyboardInterrupt:

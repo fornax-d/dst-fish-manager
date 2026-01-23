@@ -40,10 +40,6 @@ class FallBotManager:
         self._setup_error_handlers()
         self._setup_event_handlers()
 
-        # Setup event bus subscription if provided
-        if self.event_bus:
-            self._setup_event_subscriptions()
-
     def _setup_commands(self):
         """Setup bot slash commands."""
         discord_logger.info("Setting up Discord slash commands")
@@ -64,9 +60,8 @@ class FallBotManager:
 
     def _setup_event_handlers(self):
         """Setup event handlers."""
-        if self.event_bus:
-            # Setup chat message forwarding if event bus is provided
-            self._setup_event_subscriptions()
+        # Event subscriptions are now handled in set_event_bus method only
+        pass
 
     def is_enabled(self) -> bool:
         """Check if Discord bot is properly configured."""
@@ -101,7 +96,7 @@ class FallBotManager:
     async def send_message(self, message: str):
         """Send a message to the configured chat channel."""
         channel = self.client.get_chat_channel()
-        if not channel or not hasattr(channel, 'send'):
+        if not channel or not hasattr(channel, "send"):
             discord_logger.warning("No valid chat channel configured, skipping message")
             return
 
@@ -116,6 +111,9 @@ class FallBotManager:
         self.event_bus = event_bus
         if self.event_bus:
             self._setup_event_subscriptions()
+            discord_logger.debug(
+                f"Event bus set for Discord bot manager with {len(self.event_bus._subscribers)} subscriptions"
+            )
 
     def _setup_event_subscriptions(self):
         """Setup event subscriptions for chat messages."""
@@ -126,45 +124,96 @@ class FallBotManager:
     def _handle_chat_message(self, event):
         """Handle chat message events to prevent duplicate sending."""
         chat_logs = event.data
+        discord_logger.info(
+            f"Received chat event with {len(chat_logs) if isinstance(chat_logs, list) else 0} messages"
+        )
+
         if chat_logs and isinstance(chat_logs, list):
             # Process all messages but filter out duplicates and non-chat entries
             for log_entry in chat_logs:
+                discord_logger.debug(f"Processing chat entry: {log_entry}")
                 if isinstance(log_entry, str):
-                    # Skip Discord messages coming back to avoid loops
-                    if log_entry.startswith("[Discord]"):
+                    # Skip empty messages
+                    if not log_entry.strip():
                         continue
-                    
-                    # Only process actual chat messages, not join announcements
-                    if not log_entry.startswith("[Say]"):
-                        continue
-                    
-                    # Create unique ID using full content to ensure uniqueness
-                    message_id = hash(log_entry.strip())
-                    if message_id not in self.sent_messages:
-                        self.sent_messages.add(message_id)
-                        
-                        # Clean up old message IDs to prevent memory growth
-                        if len(self.sent_messages) > 100:
-                            self.sent_messages = set(list(self.sent_messages)[-50:])
-                        
-                        # Extract just the chat part: "(KU_7veFK1f1) Fornax: test"
-                        chat_part = log_entry.replace("[Say] ", "")
-                        # Message from game, forward to Discord
-                        self._forward_message_to_discord(f"[Game Chat] {chat_part}")
 
-    def _forward_message_to_discord(self, message):
+                    # Skip Discord messages coming back to avoid loops
+                    if "[Discord]" in log_entry:
+                        discord_logger.debug("Skipping Discord message to avoid loop")
+                        continue
+
+                    # Skip system messages
+                    if log_entry.startswith("[System Message]"):
+                        continue
+
+                    # Process chat messages
+                    # Format 1: [Say] message or [Whisper] message (from game chat)
+                    # Format 2: [HH:MM:SS]: [Announcement] message (from coordinator)
+                    # Format 3: [HH:MM:SS]: [Join Announcement] message (player join)
+                    # Format 4: Simple message (from UI)
+                    is_chat_message = (
+                        log_entry.startswith("[Say]")
+                        or log_entry.startswith("[Whisper]")
+                        or "[Announcement]" in log_entry
+                        or "[Join Announcement]" in log_entry
+                        or "[Leave Announcement]" in log_entry
+                        or "[Death Announcement]" in log_entry
+                        or (
+                            not log_entry.startswith("[") and len(log_entry.strip()) > 0
+                        )
+                    )
+
+                    if is_chat_message:
+                        discord_logger.info(f"Processing chat message: {log_entry}")
+                        # Create unique ID using full content to ensure uniqueness
+                        message_id = hash(log_entry.strip())
+                        if message_id not in self.sent_messages:
+                            discord_logger.info(
+                                f"New message detected (not in sent_messages)"
+                            )
+                            self.sent_messages.add(message_id)
+
+                            # Clean up old message IDs to prevent memory growth
+                            if len(self.sent_messages) > 100:
+                                self.sent_messages = set(list(self.sent_messages)[-50:])
+
+                            # Message from game, forward to Discord (keep original format)
+                            discord_logger.info(
+                                f"Calling _forward_message_to_discord with: {log_entry}"
+                            )
+                            # Schedule async send in the bot's event loop
+                            if self.client and self.client.client.is_ready():
+                                import asyncio
+
+                                asyncio.run_coroutine_threadsafe(
+                                    self._forward_message_to_discord(log_entry),
+                                    self.client.client.loop,
+                                )
+                        else:
+                            discord_logger.info(
+                                f"Skipping duplicate message: {log_entry}"
+                            )
+                    else:
+                        discord_logger.info(f"Skipping non-chat message: {log_entry}")
+
+    async def _forward_message_to_discord(self, message):
         """Forward chat message to Discord if chat channel is configured."""
         try:
             chat_channel = self.client.get_chat_channel()
-            if chat_channel and hasattr(chat_channel, 'send'):
+            if chat_channel and hasattr(chat_channel, "send"):
+                discord_logger.info(f"Forwarding message to Discord: {message}")
                 # Send message to Discord chat channel
-                asyncio.run_coroutine_threadsafe(
-                    chat_channel.send(message),
-                    self.client.client.loop,
+                await chat_channel.send(message)
+                discord_logger.info(f"Successfully sent message to Discord: {message}")
+            else:
+                discord_logger.warning(
+                    "Cannot forward message to Discord: no valid chat channel"
                 )
         except Exception as e:  # pylint: disable=broad-exception-caught
             # Catch all exceptions to ensure proper error logging
-            discord_logger.warning(f"Error forwarding message to Discord: {e}")
+            discord_logger.error(
+                f"Error forwarding message to Discord: {e}", exc_info=True
+            )
 
     def _forward_message_to_game(self, message):
         """Forward Discord message to game if appropriate."""

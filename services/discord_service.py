@@ -37,6 +37,11 @@ class DiscordService:
         if self.bot_manager:
             self.bot_manager.set_event_bus(event_bus)
             discord_logger.info("Event bus connected to Discord bot")
+            # Log event bus status for debugging
+            if event_bus:
+                discord_logger.debug(
+                    f"Event bus has {len(event_bus._subscribers)} subscriptions"
+                )
         else:
             discord_logger.warning("Event bus set but bot manager not initialized yet")
 

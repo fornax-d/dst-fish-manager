@@ -12,6 +12,7 @@ from core.state.app_state import StateManager
 from features.chat.chat_manager import ChatManager
 from features.shards.shard_manager import ShardManager
 from features.status.status_manager import StatusManager
+from utils.logger import discord_logger
 
 
 class BackgroundCoordinator:
@@ -142,6 +143,9 @@ class BackgroundCoordinator:
                                 state.ui_state.cached_chat_logs[-150:]
                             )
 
+                        discord_logger.info(
+                            f"Publishing {len(new_messages)} new chat messages from coordinator"
+                        )
                         self.event_bus.publish(
                             Event(EventType.CHAT_MESSAGE, new_messages)
                         )

@@ -54,17 +54,6 @@ class TUIApp:
         # Setup event subscriptions
         self._setup_event_subscriptions()
 
-        # Connect event bus to Discord bot if enabled and running
-        try:
-            if (
-                self.manager_service.discord_service.is_enabled()
-                and self.manager_service.discord_service.is_running
-            ):
-                self.manager_service.discord_service.set_event_bus(self.event_bus)
-        except AttributeError:
-            # Discord service not available or not properly initialized
-            pass
-
         # Initialize curses
         self._setup_curses()
 
@@ -106,6 +95,19 @@ class TUIApp:
     def run(self) -> None:
         """Main application loop."""
         running = True
+
+        # Start Discord bot in background if enabled (after UI is created)
+        try:
+            if self.manager_service.discord_service.is_enabled():
+                # Connect event bus to Discord bot BEFORE starting it
+                self.manager_service.discord_service.set_event_bus(self.event_bus)
+                self.manager_service.start_discord_bot()
+            else:
+                # Log or handle the case where Discord is not enabled
+                pass
+        except AttributeError:
+            # Discord service not available or not properly initialized
+            pass
 
         # Initial shard loading
         self.background_coordinator.run_in_background(lambda: None)
@@ -191,8 +193,10 @@ class TUIApp:
             # Send message to game and publish event for Discord forwarding
             success, _ = self.manager_service.send_chat_message("Master", message)
             if success:
-                # Publish chat message event with prefix for Discord to pick up
-                self.event_bus.publish(Event(EventType.CHAT_MESSAGE, [message]))
+                # Note: Chat messages are now handled by the coordinator
+                # which reads from the game chat log file.
+                # No need to publish separately from UI.
+                discord_logger.info(f"Chat message sent to game: {message}")
             else:
                 # Could show error popup here
                 pass
