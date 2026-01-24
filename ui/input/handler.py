@@ -4,11 +4,10 @@
 """Input handler with settings support."""
 
 import curses
-from typing import Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 from core.events.bus import Event, EventBus, EventType
 from core.state.app_state import StateManager
-
 
 if TYPE_CHECKING:
     pass

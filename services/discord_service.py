@@ -4,9 +4,9 @@
 """Discord service for running the bot in the background."""
 
 import asyncio
-import os
 import threading
-import traceback
+from os import getenv
+from traceback import format_exc
 from typing import Optional
 
 from features.discord.bot_manager import FallBotManager
@@ -79,7 +79,7 @@ class DiscordService:
             self.is_running = True
             discord_logger.info("Discord service started successfully")
 
-        except Exception as e:
+        except discord.DiscordException as e:
             discord_logger.error(f"Failed to start Discord service: {e}")
             traceback.print_exc()
             raise

@@ -7,14 +7,17 @@ import curses
 import sys
 from pathlib import Path
 
+from services.manager_service import ManagerService
+from ui.app import main
+from utils.env_loader import load_env_file
+
 # Add project root to path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-# Load environment variables from .env file
-from services.manager_service import ManagerService  # noqa: E402
+from services.manager_service import ManagerService
 from ui.app import main  # noqa: E402
-from utils.env_loader import load_env_file  # noqa: E402
+from utils.env_loader import load_env_file
 
 load_env_file()
 

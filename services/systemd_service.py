@@ -15,6 +15,9 @@ class SystemDService:
 
     @staticmethod
     def _run_systemctl_command(args: list[str]) -> Tuple[bool, str, str]:
+        import shutil
+        import subprocess
+
         """Runs a systemctl command and returns success, stdout, and stderr."""
         try:
             systemctl_path = shutil.which("systemctl")

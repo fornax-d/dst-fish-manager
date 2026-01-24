@@ -25,13 +25,12 @@ class ServerStatus:
 class UIState:
     """UI-specific state."""
 
-    selected_shard_idx: int = 0
-    selected_mod_idx: int = 0
-    selected_action_idx: int = 0
-    selected_global_action_idx: int = -1  # -1 means not selected
-    log_viewer_active: bool = False
-    mods_viewer_active: bool = False
-    discord_logs_viewer_active: bool = False
+    selected_indices: Dict[str, int] = field(
+        default_factory=lambda: {"shard": 0, "mod": 0, "action": 0, "global_action": -1}
+    )
+    viewer_states: Dict[str, bool] = field(
+        default_factory=lambda: {"log": False, "mods": False, "discord_logs": False}
+    )
     log_content: List[str] = field(default_factory=list)
     log_scroll_pos: int = 0
     mods: List[Dict[str, Any]] = field(default_factory=list)

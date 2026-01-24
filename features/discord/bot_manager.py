@@ -5,7 +5,7 @@
 
 import asyncio
 
-from core.events.bus import EventType
+from core.events.bus import EventType as CoreEventType
 from features.discord.bot_client import DiscordBotClient
 from features.discord.commands.panel_commands import PanelCommands
 from features.discord.commands.status_commands import StatusCommands
@@ -28,8 +28,8 @@ class FallBotManager:
         self.event_bus = event_bus
         self.sent_messages = set()  # Track sent message IDs to prevent duplicates
 
-        # Initialize bot client
-        self.client = DiscordBotClient(self.event_bus)
+        # Initialize bot client with manager_service
+        self.client = DiscordBotClient(self.event_bus, manager_service)
 
         # Initialize command handlers
         self.panel_commands = PanelCommands(manager_service)
@@ -119,7 +119,9 @@ class FallBotManager:
         """Setup event subscriptions for chat messages."""
         if self.event_bus:
             # Subscribe to chat message events
-            self.event_bus.subscribe(EventType.CHAT_MESSAGE, self._handle_chat_message)
+            self.event_bus.subscribe(
+                CoreEventType.CHAT_MESSAGE, self._handle_chat_message
+            )
 
     def _handle_chat_message(self, event):
         """Handle chat message events to prevent duplicate sending."""
@@ -165,11 +167,21 @@ class FallBotManager:
 
                     if is_chat_message:
                         discord_logger.info(f"Processing chat message: {log_entry}")
-                        # Create unique ID using full content to ensure uniqueness
-                        message_id = hash(log_entry.strip())
+
+                        # Remove timestamp prefix if present (first 12 characters: [HH:MM:SS]: )
+                        cleaned_message = log_entry
+                        if (
+                            len(log_entry) > 12
+                            and log_entry[11] == "]"
+                            and log_entry[12] == ":"
+                        ):
+                            cleaned_message = log_entry[13:].strip()
+
+                        # Create unique ID using cleaned content to ensure uniqueness
+                        message_id = hash(cleaned_message.strip())
                         if message_id not in self.sent_messages:
                             discord_logger.info(
-                                f"New message detected (not in sent_messages)"
+                                "New message detected (not in sent_messages)"
                             )
                             self.sent_messages.add(message_id)
 
@@ -177,21 +189,19 @@ class FallBotManager:
                             if len(self.sent_messages) > 100:
                                 self.sent_messages = set(list(self.sent_messages)[-50:])
 
-                            # Message from game, forward to Discord (keep original format)
+                            # Message from game, forward to Discord (use cleaned format)
                             discord_logger.info(
-                                f"Calling _forward_message_to_discord with: {log_entry}"
+                                f"Calling _forward_message_to_discord with: {cleaned_message}"
                             )
                             # Schedule async send in the bot's event loop
                             if self.client and self.client.client.is_ready():
-                                import asyncio
-
                                 asyncio.run_coroutine_threadsafe(
-                                    self._forward_message_to_discord(log_entry),
+                                    self._forward_message_to_discord(cleaned_message),
                                     self.client.client.loop,
                                 )
                         else:
                             discord_logger.info(
-                                f"Skipping duplicate message: {log_entry}"
+                                f"Skipping duplicate message: {cleaned_message}"
                             )
                     else:
                         discord_logger.info(f"Skipping non-chat message: {log_entry}")

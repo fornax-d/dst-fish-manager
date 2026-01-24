@@ -3,10 +3,10 @@
 
 """Event system for decoupled communication."""
 
-from enum import Enum
-from typing import Any, Callable, Dict, List
 import logging
 import threading
+from enum import Enum
+from typing import Any, Callable, Dict, List
 
 
 class EventType(Enum):
@@ -63,10 +63,10 @@ class EventBus:
         for callback in subscribers:
             try:
                 callback(event)
-            except (RuntimeError, TypeError) as e:
+            except (RuntimeError, TypeError, ValueError) as e:
                 logging.getLogger(__name__).warning(
                     "Event subscriber %s raised exception: %s", callback.__name__, e
-                )  # noqa: W0718
+                )
 
 
 # Global event bus instance

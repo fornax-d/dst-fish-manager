@@ -6,14 +6,14 @@
 import os
 import subprocess
 from pathlib import Path
-from typing import List, Tuple, Dict
+from typing import Dict, List, Tuple
 
 from features.chat.chat_manager import ChatManager
+from features.shards.shard_manager import ShardManager
 from features.status.status_manager import StatusManager
 from services.discord_service import DiscordService
 from services.systemd_service import SystemDService
-from features.shards.shard_manager import ShardManager
-from utils.config import Shard, HOME_DIR
+from utils.config import HOME_DIR, Shard
 
 
 class ManagerService:
@@ -56,11 +56,17 @@ class ManagerService:
         """
         Synchronizes systemd units with shards.conf.
         """
+        from features.chat.chat_manager import ChatManager
+        from features.status.status_manager import StatusManager
+        from services.discord_service import DiscordService
+
         self.shard_manager.sync_shards()
 
     def get_chat_logs(self, lines: int = 50) -> List[str]:
         """Gets the latest chat messages from the game chat log."""
         return ChatManager.get_chat_logs(lines)
+
+    import subprocess
 
     def run_updater(self):
         """Runs the dst-updater script."""

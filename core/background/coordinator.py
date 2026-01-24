@@ -53,7 +53,10 @@ class BackgroundCoordinator:
             try:
                 func(*args, **kwargs)
                 # Refresh shards after task completes
-                shard_manager = ShardManager()
+                from features.chat.chat_manager import ChatManager
+                from features.shards.shard_manager import ShardManager
+
+                self.chat_manager = ChatManager()
                 new_shards = shard_manager.get_shards()
                 self.state_manager.update_shards(new_shards)
                 self.event_bus.publish(Event(EventType.SHARD_REFRESH, new_shards))

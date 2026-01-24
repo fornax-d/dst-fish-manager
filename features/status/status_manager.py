@@ -120,23 +120,12 @@ class StatusManager:
                     break
 
             # Extract players - focus on recent activity and listallplayers output
-            players = []
-            seen_players = set()
+            _ = []
+            _ = set()
             all_players = {}  # Track all players across shards using KU_ID as key
 
             # Pattern for c_listallplayers output - look for actual player list
             # After c_listallplayers() command, server outputs player data
-            player_pattern_list = re.compile(r"\[(\w+)\]\s*(\d+)")
-            player_pattern_ku = re.compile(r"(\w+)\s*(\d+)")
-
-            # Pattern for chat messages: "[Say] (KU_xxx) PlayerName: message"
-            player_pattern_chat = re.compile(r"\[Say\] \([^)]+\) (\w+):")
-
-            # Pattern for join announcements: "[Join Announcement] PlayerName"
-            player_pattern_join = re.compile(r"\[Join Announcement\] (\w+)")
-
-            # Pattern for character information: "PlayerName (character_name)"
-            player_char_pattern = re.compile(r"(\w+)\s+\(([^)]+)\)")
 
             # Parse Players using the approach from the old implementation
             # Split content by "All players:" marker to find the player list section

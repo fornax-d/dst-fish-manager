@@ -3,7 +3,6 @@
 
 """Chat manager for handling game chat functionality."""
 
-import collections
 from typing import List
 
 from utils.config import HOME_DIR, config_manager, get_game_config
@@ -98,7 +97,7 @@ class ChatManager:
             import subprocess
 
             shell_cmd = f"echo {shlex.quote(command)} > {shlex.quote(str(fifo_path))}"
-            result = subprocess.run(
+            subprocess.run(
                 shell_cmd,
                 shell=True,
                 check=True,

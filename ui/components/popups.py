@@ -7,7 +7,10 @@ import curses
 import curses.textpad
 from typing import Optional, Tuple
 
-from features.cluster.cluster_manager import BranchManager, ClusterManager  # noqa: C0415
+from features.cluster.cluster_manager import (  # noqa: C0415
+    BranchManager,
+    ClusterManager,
+)
 from ui.rendering.themes import BoxChars
 
 
@@ -190,6 +193,8 @@ class PopupManager:
 
     def _draw_popup_box(self, win: curses.window, title: str) -> None:
         """Draw a box around the popup window."""
+        if not self.theme or not self.box_chars:
+            return
         from ui.rendering.themes import BoxChars  # noqa: C0415
 
         BoxChars.draw_box_with_title(

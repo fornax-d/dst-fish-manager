@@ -145,8 +145,6 @@ class BoxChars:
 
             # Draw title
             if title and w > len(title) + 4 and theme:
-                win.addstr(
-                    0, 2, f" {title} ", theme.pairs["title"] | curses.A_BOLD
-                )
+                win.addstr(0, 2, f" {title} ", theme.pairs["title"] | curses.A_BOLD)
         except curses.error:
             pass

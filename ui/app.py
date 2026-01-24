@@ -221,6 +221,12 @@ class TUIApp:
             is_discord: True if Discord logs, False for system logs
             scroll_to_bottom: If True, scroll to show most recent logs
         """
+        # Use the existing method from discord_logger to avoid code duplication
+        if is_discord:
+            log_content = discord_logger.get_log_file_content(max_lines=500)
+        elif not log_content:
+            log_content = ["No log content available"]
+
         self.state_manager.state.ui_state.log_content = log_content
         self.state_manager.state.ui_state.discord_logs_viewer_active = is_discord
         self.state_manager.state.ui_state.log_viewer_active = not is_discord
