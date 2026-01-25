@@ -1,3 +1,5 @@
+<img width="1593" height="916" alt="Zrzut ekranu_20260125_204928" src="https://github.com/user-attachments/assets/00dd94e3-01a6-4dea-96de-714ac64ea7fb" />
+
 # DST Fish Manager 🐟
 
 A Terminal UI manager for Don't Starve Together dedicated servers.
