@@ -117,6 +117,22 @@ class FishBotClient(discord.Client):
         """Called when bot is ready."""
         self.log(f"Logged in as {self.user} (ID: {self.user.id})")
 
+    async def on_message(self, message):
+        """Handle incoming messages from Discord."""
+        # Ignore own messages
+        if message.author == self.user:
+            return
+
+        # Check channel
+        if self.chat_channel_id and str(message.channel.id) == str(self.chat_channel_id):
+            # Relay to game
+            # Format: User: Message
+            display_name = message.author.display_name
+            content = message.clean_content
+            self.request_queue.put(("ANNOUNCE", {
+                "message": f"{display_name}: {content}"
+            }))
+
     async def queue_listener(self):
         """Listen for commands from the main process."""
         self.log("Queue listener started")

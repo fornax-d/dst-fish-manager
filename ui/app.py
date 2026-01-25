@@ -264,7 +264,7 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
         """Prompt for chat message."""
         message = self.renderer.popup_manager.text_input_popup("Chat:", width=60)
         if message:
-            success, _ = self.manager_service.send_chat_message("Master", message)
+            success, _ = self.manager_service.send_chat_message("Master", f"[SSH God] {message}")
             if not success:
                 # Could show error popup here
                 pass
