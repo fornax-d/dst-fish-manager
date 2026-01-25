@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=broad-exception-caught
 """
 Plugin Manager Implementation.
 """
 import os
-import importlib
 import importlib.util
 import logging
-from typing import Dict, List, Optional
+from typing import Dict
 from core.plugins.interface import IPlugin
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,9 @@ class PluginManager:
         self.manager_service = manager_service
         self.event_bus = event_bus
         self.plugins: Dict[str, IPlugin] = {}
-        self.plugin_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../plugins"))
+        self.plugin_dir = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "../../plugins")
+        )
 
     def discover_plugins(self):
         """Scans the plugins directory for valid plugins."""
@@ -29,7 +31,9 @@ class PluginManager:
 
         for item in os.listdir(self.plugin_dir):
             plugin_path = os.path.join(self.plugin_dir, item)
-            if os.path.isdir(plugin_path) and os.path.exists(os.path.join(plugin_path, "plugin.py")):
+            if os.path.isdir(plugin_path) and os.path.exists(
+                os.path.join(plugin_path, "plugin.py")
+            ):
                 self._load_plugin(item, os.path.join(plugin_path, "plugin.py"))
 
     def _load_plugin(self, plugin_name: str, file_path: str):

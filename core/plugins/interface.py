@@ -22,18 +22,15 @@ class IPlugin(ABC):
             manager_service: Reference to the ManagerService for API access
             event_bus: Reference to the EventBus for event subscriptions
         """
-        pass
 
     @abstractmethod
     def on_start(self):
-        """Called when the plugin should start its main execution (e.g. background threads/processes)."""
-        pass
+        """Called when the plugin is started."""
 
     @abstractmethod
     def on_stop(self):
-        """Called when the plugin should stop."""
-        pass
-    
+        """Called when the plugin is stopped."""
+
+    @abstractmethod
     def update(self):
-        """Optional: Called periodically by the main loop."""
-        pass
+        """Called periodically from the main loop."""

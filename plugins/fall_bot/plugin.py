@@ -1,34 +1,29 @@
-# -*- coding: utf-8 -*-
-"""
-fall.bot plugin.
-"""
-
+import sys
+import os
 import logging
 import multiprocessing
-import os
 import queue
 
-# from .bot_process import run_bot_process
-# Since we load this plugin dynamically from file, relative imports are tricky.
-# We add the current directory to sys.path temporarily.
-import sys
+# Validating local import for fallbot_process
+# pylint: disable=import-error, wrong-import-position
+try:
+    from .fallbot_process import run_bot_process
+except ImportError:
+    # Fallback for dynamic loading where relative imports might fail
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.append(current_dir)
+    from fallbot_process import run_bot_process
 
 from core.plugins.interface import IPlugin
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
-
-try:
-    from fallbot_process import run_bot_process
-finally:
-    # Optional: remove from path if we want to be clean, but usually fine to keep for sub-imports
-    pass
+from core.events.bus import EventType
 
 logger = logging.getLogger(__name__)
 
 
 class DiscordBotPlugin(IPlugin):
+    """Fall Bot Plugin integration."""
+
     def __init__(self):
         super().__init__()
         self.name = "fall.bot Integration"
@@ -40,6 +35,7 @@ class DiscordBotPlugin(IPlugin):
         self.manager = None
         self.event_bus = None
         self.chat_sub_id = None
+        self.last_chat_logs = []
 
     def on_load(self, config, manager_service, event_bus=None):
         self.manager = manager_service
@@ -48,8 +44,6 @@ class DiscordBotPlugin(IPlugin):
         pass
 
     def on_start(self):
-        import os
-
         token = os.getenv("DISCORD_BOT_TOKEN")
         if not token:
             logger.warning("DISCORD_BOT_TOKEN not set, skipping Discord Bot start.")
@@ -69,8 +63,6 @@ class DiscordBotPlugin(IPlugin):
 
         # Subscribe to chat events
         if self.event_bus:
-            from core.events.bus import EventType
-
             self.chat_sub_id = self.event_bus.subscribe(
                 EventType.CHAT_MESSAGE, self._on_chat_event
             )
@@ -80,8 +72,6 @@ class DiscordBotPlugin(IPlugin):
     def on_stop(self):
         # Unsubscribe
         if self.event_bus and self.chat_sub_id:
-            from core.events.bus import EventType
-
             self.event_bus.unsubscribe(EventType.CHAT_MESSAGE, self.chat_sub_id)
 
         if self.process and self.process.is_alive():
@@ -181,15 +171,15 @@ class DiscordBotPlugin(IPlugin):
             # This returns (success, stdout, stderr)
             # control_all_shards or control_shard
             if len(target_shards) > 1:
-                success, out, err = self.manager.control_all_shards(
+                success, _, err = self.manager.control_all_shards(
                     action, target_shards
                 )
             elif len(target_shards) == 1:
-                success, out, err = self.manager.control_shard(
+                success, _, err = self.manager.control_shard(
                     target_shards[0].name, action
                 )
             else:
-                success, out, err = False, "", "Shard not found"
+                success, _, err = False, "", "Shard not found"
 
             # Reply
             self.command_queue.put(
@@ -214,7 +204,7 @@ class DiscordBotPlugin(IPlugin):
             # Here we just kick it off.
 
             try:
-                proc = self.manager.run_updater()
+                _ = self.manager.run_updater()
                 # We can't easily capture output here without blocking or complex thread handling.
                 # Let's just say it started.
                 self.command_queue.put(
@@ -288,8 +278,6 @@ class DiscordBotPlugin(IPlugin):
         if not chat_logs or not isinstance(chat_logs, list):
             return
 
-        # Simple diffing (naive)
-        # We need `self.last_chat_logs`
         if not hasattr(self, "last_chat_logs"):
             self.last_chat_logs = []
 
