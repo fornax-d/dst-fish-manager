@@ -5,7 +5,6 @@
 
 import os
 import re
-import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List
@@ -102,8 +101,10 @@ class ConfigManager:
 
             self._config_cache = config
             return True
-        except (OSError, PermissionError) as e:
-            print(f"Error writing config: {e}", file=sys.stderr)  # noqa: T201
+        except Exception as e:
+            import sys
+
+            print(f"Error writing config: {e}", file=sys.stderr)
             return False
 
     def update_config_value(self, key: str, value: str) -> bool:

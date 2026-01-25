@@ -31,20 +31,20 @@ mkdir -p "$DEST_LOCAL_BIN_DIR"
 
 # --- Copy systemd files ---
 echo "Installing systemd service files..."
-cp -v "$SOURCE_DIR/.config/systemd/user/dontstarve.target" "$DEST_SYSTEMD_USER_DIR/"
-cp -v "$SOURCE_DIR/.config/systemd/user/dontstarve@.service" "$DEST_SYSTEMD_USER_DIR/"
+cp -v "$SOURCE_DIR/config/systemd/user/dontstarve.target" "$DEST_SYSTEMD_USER_DIR/"
+cp -v "$SOURCE_DIR/config/systemd/user/dontstarve@.service" "$DEST_SYSTEMD_USER_DIR/"
 
 # --- Copy Don't Starve config files ---
 echo "Installing Don't Starve configuration files..."
-cp -v "$SOURCE_DIR/.config/dontstarve/config" "$DEST_DONTSTARVE_CONFIG_DIR/"
-cp -v "$SOURCE_DIR/.config/dontstarve/shards.conf" "$DEST_DONTSTARVE_CONFIG_DIR/"
+cp -v "$SOURCE_DIR/config/dontstarve/config" "$DEST_DONTSTARVE_CONFIG_DIR/"
+cp -v "$SOURCE_DIR/config/dontstarve/shards.conf" "$DEST_DONTSTARVE_CONFIG_DIR/"
 
 
 # --- Copy executable scripts ---
 echo "Installing executable scripts..."
-cp -v "$SOURCE_DIR/.local/bin/dst-server" "$DEST_LOCAL_BIN_DIR/"
-cp -v "$SOURCE_DIR/.local/bin/dst-tui" "$DEST_LOCAL_BIN_DIR/"
-cp -v "$SOURCE_DIR/.local/bin/dst-updater" "$DEST_LOCAL_BIN_DIR/"
+cp -v "$SOURCE_DIR/local/bin/dst-server" "$DEST_LOCAL_BIN_DIR/"
+cp -v "$SOURCE_DIR/local/bin/dst-tui" "$DEST_LOCAL_BIN_DIR/"
+cp -v "$SOURCE_DIR/local/bin/dst-updater" "$DEST_LOCAL_BIN_DIR/"
 
 # --- Set permissions ---
 echo "Setting executable permissions..."

@@ -4,31 +4,16 @@
 """Main renderer for the TUI."""
 
 import curses
-from typing import TYPE_CHECKING, Optional
+from typing import Optional, TYPE_CHECKING
 
 from core.state.app_state import StateManager
-from ui.components.popups import PopupManager
 from ui.components.windows import WindowManager
-from ui.rendering.themes import BoxChars, Theme
+from ui.components.popups import PopupManager
+from ui.rendering.themes import Theme, BoxChars
 from utils.helpers import truncate_string
 
 if TYPE_CHECKING:
     from ui.app import TUIApp
-
-
-# Emoji constants for status display
-SEASON_EMOJIS = {
-    "autumn": "🍂",
-    "winter": "❄️",
-    "spring": "🌱",
-    "summer": "☀️",
-}
-
-PHASE_EMOJIS = {
-    "day": "☀️",
-    "dusk": "🌆",
-    "night": "🌙",
-}
 
 
 class Renderer:
@@ -51,6 +36,8 @@ class Renderer:
 
     def render(self) -> None:
         """Main render method."""
+        state = self.state_manager.state
+
         # Check minimum terminal size
         h, w = self.stdscr.getmaxyx()
         if h < 12 or w < 40:
@@ -104,7 +91,7 @@ class Renderer:
     def _render_header(self, w: int) -> None:
         """Render the header."""
         state = self.state_manager.state
-        title = "DST FISH MANAGER | F10: Toggle Discord Bot"
+        title = "DST FISH MANAGER"
         if state.is_working:
             title += " [WAITING...]"
 
@@ -138,9 +125,18 @@ class Renderer:
         state = self.state_manager.state
         status = state.server_status
 
-        # Use global emoji constants
-        season_emojis = SEASON_EMOJIS
-        phase_emojis = PHASE_EMOJIS
+        # Emoji mappings
+        season_emojis = {
+            "autumn": "🍂",
+            "winter": "❄️",
+            "spring": "🌱",
+            "summer": "☀️",
+        }
+        phase_emojis = {
+            "day": "☀️",
+            "dusk": "🌆",
+            "night": "🌙",
+        }
 
         # Clear content area with proper width
         for y in range(1, h - 1):
@@ -157,20 +153,12 @@ class Renderer:
             p_emoji = phase_emojis.get(phase.lower(), "❓")
 
             # Line 1: Season: Emoji | Day: ...
-            season_info = f"{s_emoji}" if season != "---" else "Unknown"
-            day_info = status.day if status.day != "---" else "Unknown"
-            days_left_info = (
-                f"({status.days_left} left)" if status.days_left != "---" else ""
-            )
-
-            line1 = f"Season: {season_info} | Day: {day_info}"
-            if w > len(line1) + 4 and days_left_info:
-                line1 += f" {days_left_info}"
+            line1 = f"Season: {s_emoji} | Day: {status.day}"
+            if w > len(line1) + 4:
+                line1 += f" ({status.days_left} left)"
 
             # Line 2: Phase: Emoji | Players: X
-            phase_info = f"{p_emoji}" if phase != "---" else "Unknown"
-            players_count = len(status.players) if status.players else 0
-            line2 = f"Phase: {phase_info} | Players: {players_count}"
+            line2 = f"Phase: {p_emoji} | Players: {len(status.players)}"
 
             win.addstr(1, 2, truncate_string(line1, w - 4), self.theme.pairs["default"])
             if h >= 3:
@@ -186,10 +174,7 @@ class Renderer:
                         i == max_players_to_show - 1
                         and len(status.players) == max_players_to_show
                     ):
-                        # Handle case where 'char' field might not exist
-                        player_char = p.get("char", "Unknown")
-                        player_name = p.get("name", "Unknown")
-                        p_line = f"  {player_name} - {player_char}"
+                        p_line = f"  {p['name']} - {p['char']}"
                         try:
                             win.addstr(
                                 3 + i,
@@ -208,9 +193,6 @@ class Renderer:
                             self.theme.pairs["default"],
                         )
                         break
-            elif h > 4:
-                # Show message when no players are online
-                win.addstr(3, 2, "  No players online", self.theme.pairs["default"])
 
         except curses.error:
             pass
@@ -337,9 +319,6 @@ class Renderer:
         if state.ui_state.mods_viewer_active:
             self._draw_mods_box(win)
             self._render_mods(win)
-        elif state.ui_state.discord_logs_viewer_active:
-            self._draw_logs_box(win, "DISCORD BOT LOGS [r: refresh]")
-            self._render_logs_pane(win)
         else:
             right_pane_title = (
                 "LOGS" if state.ui_state.log_viewer_active else "CHAT LOGS"
@@ -361,13 +340,9 @@ class Renderer:
                 marker = ">" if i == state.ui_state.selected_mod_idx else " "
                 win.addstr(i + 1, 1, marker, self.theme.pairs["title"])
 
-                # Status
-                status_color = (
-                    self.theme.pairs["success"]
-                    if mod["enabled"]
-                    else self.theme.pairs["error"]
-                )
-                status_text = "[ENABLED] " if mod["enabled"] else "[DISABLED]"
+                # Status - enhanced with mod status colors
+                status_color = self._get_mod_status_color(mod)
+                status_text = self._get_mod_status_text(mod)
                 win.addstr(i + 1, 3, status_text, status_color)
 
                 # Mod Name/ID
@@ -380,14 +355,38 @@ class Renderer:
             except curses.error:
                 pass
 
+    def _get_mod_status_color(self, mod) -> int:
+        """Get color for mod status based on new status fields."""
+        if mod.get("error_count", 0) > 0:
+            return self.theme.pairs["error"]  # Red for errors
+        elif not mod.get("configuration_valid", True):
+            return self.theme.pairs["warning"]  # Yellow for config issues
+        elif mod.get("loaded_in_game", False) and mod.get("enabled", False):
+            return self.theme.pairs["success"]  # Green for loaded and enabled
+        elif mod.get("enabled", False) and not mod.get("loaded_in_game", False):
+            return self.theme.pairs["info"]  # Cyan for enabled but not loaded
+        else:
+            return self.theme.pairs["default"]  # Default for disabled
+
+    def _get_mod_status_text(self, mod) -> str:
+        """Get status text for mod."""
+        if mod.get("error_count", 0) > 0:
+            error_count = mod["error_count"]
+            return f"[ERROR:{error_count}] "
+        elif not mod.get("configuration_valid", True):
+            return "[CONFIG] "
+        elif mod.get("loaded_in_game", False) and mod.get("enabled", False):
+            return "[LOADED] "
+        elif mod.get("enabled", False):
+            return "[ENABLED] "
+        else:
+            return "[DISABLED] "
+
     def _render_logs_pane(self, win) -> None:
         """Render logs or chat pane."""
         state = self.state_manager.state
 
-        if (
-            state.ui_state.log_viewer_active
-            or state.ui_state.discord_logs_viewer_active
-        ):
+        if state.ui_state.log_viewer_active:
             lh, lw_box = win.getmaxyx()
             for i in range(1, lh - 1):
                 idx = state.ui_state.log_scroll_pos + i - 1
@@ -411,17 +410,7 @@ class Renderer:
                         y = i + 1
                         if line and len(line) > available_width:
                             line = truncate_string(line, available_width - 3) + "..."
-
-                        # Use different colors for different message sources
-                        if line.startswith("[Discord]"):
-                            # Discord messages in blue
-                            win.addstr(y, 1, line, self.theme.pairs["discord"])
-                        elif line.startswith("[Game Chat]"):
-                            # Game messages in green
-                            win.addstr(y, 1, line, self.theme.pairs["game_chat"])
-                        else:
-                            # Regular messages in default color
-                            win.addstr(y, 1, line, self.theme.pairs["default"])
+                        win.addstr(y, 1, line, self.theme.pairs["default"])
                     except curses.error:
                         pass
             else:
@@ -473,10 +462,10 @@ class Renderer:
 
         if state.ui_state.mods_viewer_active:
             footer = " ARROWS:NAV | ENTER:TOGGLE | A:ADD | M:BACK | Q:EXIT "
-        elif state.ui_state.discord_logs_viewer_active:
-            footer = " ARROWS:SCROLL | R:REFRESH | D/Q:BACK "
         else:
-            footer = " ARROWS:NAV | ENTER:TOGGLE | S:SETTINGS | M:MODS | D:DISCORD | C:CHAT | Q:EXIT "
+            footer = (
+                " ARROWS:NAV | ENTER:TOGGLE | S:SETTINGS | M:MODS | C:CHAT | Q:EXIT "
+            )
 
         # Clear footer line with background color (only 1 line - h-1)
         try:

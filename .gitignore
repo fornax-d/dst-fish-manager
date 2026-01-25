@@ -43,6 +43,4 @@ ENV/
 logs/
 
 # OS
-.DS_Store
 Thumbs.db
-key.env

@@ -9,10 +9,6 @@ from typing import Callable
 
 from core.events.bus import Event, EventBus, EventType
 from core.state.app_state import StateManager
-from features.chat.chat_manager import ChatManager
-from features.shards.shard_manager import ShardManager
-from features.status.status_manager import StatusManager
-from utils.logger import discord_logger
 
 
 class BackgroundCoordinator:
@@ -53,10 +49,9 @@ class BackgroundCoordinator:
             try:
                 func(*args, **kwargs)
                 # Refresh shards after task completes
-                from features.chat.chat_manager import ChatManager
                 from features.shards.shard_manager import ShardManager
 
-                self.chat_manager = ChatManager()
+                shard_manager = ShardManager()
                 new_shards = shard_manager.get_shards()
                 self.state_manager.update_shards(new_shards)
                 self.event_bus.publish(Event(EventType.SHARD_REFRESH, new_shards))
@@ -78,6 +73,8 @@ class BackgroundCoordinator:
                     not state.ui_state.log_viewer_active
                     and not state.ui_state.mods_viewer_active
                 ):
+                    from features.shards.shard_manager import ShardManager
+
                     shard_manager = ShardManager()
                     new_shards = shard_manager.get_shards()
                     self.state_manager.update_shards(new_shards)
@@ -105,6 +102,8 @@ class BackgroundCoordinator:
 
             # Server status refresh (every 5 seconds)
             if current_time - state.last_status_refresh_time > 5.0:
+                from features.status.status_manager import StatusManager
+
                 new_status = StatusManager.get_server_status()
                 shards = self.state_manager.get_shards_copy()
                 master = next((s for s in shards if s.name == "Master"), None)
@@ -119,39 +118,18 @@ class BackgroundCoordinator:
             # Status poll request (every 15 seconds)
             if current_time - state.last_status_poll_time > 15.0:
                 if not state.ui_state.log_viewer_active and not state.is_working:
+                    from features.status.status_manager import StatusManager
+
                     StatusManager.request_status_update()
                 self.state_manager.update_timing(last_status_poll_time=current_time)
 
             # Chat logs refresh (every 5 seconds)
             if current_time - state.last_chat_read_time > 5.0:
+                from features.chat.chat_manager import ChatManager
+
                 chat_logs = ChatManager.get_chat_logs(50)
-                if chat_logs:
-                    # Filter out duplicate messages using the seen_messages set
-                    new_messages = []
-                    for message in chat_logs:
-                        if message not in state.ui_state.seen_chat_messages:
-                            new_messages.append(message)
-                            state.ui_state.seen_chat_messages.add(message)
-
-                    # Update the chat logs with new messages only
-                    if new_messages:
-                        state.ui_state.cached_chat_logs.extend(new_messages)
-                        # Limit the total number of messages to prevent memory issues
-                        if len(state.ui_state.cached_chat_logs) > 200:
-                            # Remove oldest messages and their IDs from seen_messages
-                            oldest_messages = state.ui_state.cached_chat_logs[:-150]
-                            for msg in oldest_messages:
-                                state.ui_state.seen_chat_messages.discard(msg)
-                            state.ui_state.cached_chat_logs = (
-                                state.ui_state.cached_chat_logs[-150:]
-                            )
-
-                        discord_logger.info(
-                            f"Publishing {len(new_messages)} new chat messages from coordinator"
-                        )
-                        self.event_bus.publish(
-                            Event(EventType.CHAT_MESSAGE, new_messages)
-                        )
+                state.ui_state.cached_chat_logs = chat_logs
+                self.event_bus.publish(Event(EventType.CHAT_MESSAGE, chat_logs))
                 self.state_manager.update_timing(last_chat_read_time=current_time)
 
             time.sleep(0.1)

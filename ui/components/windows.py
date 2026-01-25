@@ -86,11 +86,41 @@ class WindowManager:
         """Draw a themed box with title on a window."""
         if not self.theme or not self.box_chars:
             return
-        from ui.rendering.themes import BoxChars  # noqa: C0415
 
-        BoxChars.draw_box_with_title(
-            win, self.box_chars, self.theme, title, use_border_attr=True
-        )
+        try:
+            h, w = win.getmaxyx()
+            if h < 2 or w < 2:
+                return
+
+            win.attron(self.theme.pairs["border"])
+
+            # Corners
+            win.addstr(0, 0, self.box_chars.chars["tl"])
+            win.addstr(0, w - 1, self.box_chars.chars["tr"])
+            win.addstr(h - 1, 0, self.box_chars.chars["bl"])
+            try:
+                win.addstr(h - 1, w - 1, self.box_chars.chars["br"])
+            except curses.error:
+                try:
+                    win.insstr(h - 1, w - 1, self.box_chars.chars["br"])
+                except curses.error:
+                    pass
+
+            # Lines
+            for x in range(1, w - 1):
+                win.addstr(0, x, self.box_chars.chars["h"])
+                win.addstr(h - 1, x, self.box_chars.chars["h"])
+            for y in range(1, h - 1):
+                win.addstr(y, 0, self.box_chars.chars["v"])
+                win.addstr(y, w - 1, self.box_chars.chars["v"])
+            win.attroff(self.theme.pairs["border"])
+
+            if title and w > len(title) + 4:
+                win.addstr(
+                    0, 2, f" {title} ", self.theme.pairs["title"] | curses.A_BOLD
+                )
+        except curses.error:
+            pass
 
     def refresh_all(self) -> None:
         """Refresh all windows."""

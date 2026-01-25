@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Input handler with settings support."""
+"""Enhanced input handler with settings support."""
 
 import curses
 from typing import TYPE_CHECKING, Any, Optional
@@ -10,11 +10,11 @@ from core.events.bus import Event, EventBus, EventType
 from core.state.app_state import StateManager
 
 if TYPE_CHECKING:
-    pass
+    from ui.app import TUIApp
 
 
-class InputHandler:
-    """Input handler with settings support."""
+class EnhancedInputHandler:
+    """Enhanced input handler with settings support."""
 
     def __init__(
         self, state_manager: StateManager, event_bus: EventBus, theme, popup_manager
@@ -25,7 +25,7 @@ class InputHandler:
         self.popup_manager = popup_manager
 
         self.action_callbacks = {}
-        self._app: Optional[Any] = None  # Back-reference to app
+        self._app: Optional["TUIApp"] = None  # Back-reference to app
         self._setup_keymap()
 
     def _setup_keymap(self):
@@ -41,13 +41,14 @@ class InputHandler:
             ord("e"): self._handle_enable,
             ord("c"): self._handle_chat,
             ord("m"): self._handle_mods,
-            ord("d"): self._handle_discord_logs,
+            ord("v"): self._handle_validate,
+            ord("f"): self._handle_fix,
             ord("s"): self._handle_settings,
+            ord("i"): self._handle_stats,
             ord("q"): self._handle_quit,
             27: self._handle_quit,  # Esc
             # Special
             curses.KEY_RESIZE: self._handle_resize,
-            curses.KEY_F10: self._handle_discord_toggle,  # F10 - Toggle Discord bot
         }
 
     def register_action_callback(self, action: str, callback) -> None:
@@ -59,6 +60,7 @@ class InputHandler:
         Process all pending input.
         Returns True if exit requested, False otherwise.
         """
+        input_received = False
         state = self.state_manager.state
 
         while True:
@@ -66,14 +68,12 @@ class InputHandler:
             if key == -1:
                 break
 
+            input_received = True
             self.state_manager.request_redraw()
 
             # Handle special modes
             if state.ui_state.log_viewer_active:
                 if self._handle_log_viewer_input(key):
-                    continue
-            elif state.ui_state.discord_logs_viewer_active:
-                if self._handle_discord_logs_viewer_input(key):
                     continue
             elif state.ui_state.mods_viewer_active:
                 if self._handle_mods_input(key):
@@ -174,9 +174,9 @@ class InputHandler:
             callback()
         return False
 
-    def _handle_discord_logs(self, stdscr, key) -> bool:
-        """Handle 'd' key for Discord bot logs."""
-        callback = self.action_callbacks.get("open_discord_logs")
+    def _handle_stats(self, stdscr, key) -> bool:
+        """Handle 'i' key for statistics."""
+        callback = self.action_callbacks.get("show_stats")
         if callback:
             callback()
         return False
@@ -189,13 +189,25 @@ class InputHandler:
             pass
         return False  # Don't consume the key - let normal processing continue
 
+    def _handle_validate(self, stdscr, key) -> bool:
+        """Handle 'v' key for mod validation."""
+        callback = self.action_callbacks.get("validate_mod")
+        if callback:
+            callback()
+        return False
+
+    def _handle_fix(self, stdscr, key) -> bool:
+        """Handle 'f' key for fixing mods."""
+        callback = self.action_callbacks.get("fix_mod")
+        if callback:
+            callback()
+        return False
+
     def _handle_quit(self, stdscr, key) -> bool:
         """Handle quit keys."""
         state = self.state_manager.state
         if state.ui_state.log_viewer_active:
             state.ui_state.log_viewer_active = False
-        elif state.ui_state.discord_logs_viewer_active:
-            state.ui_state.discord_logs_viewer_active = False
         elif state.ui_state.mods_viewer_active:
             state.ui_state.mods_viewer_active = False
 
@@ -220,36 +232,11 @@ class InputHandler:
                 max_scroll, state.ui_state.log_scroll_pos + 1
             )
             return True
-        if key == curses.KEY_UP:
+        elif key == curses.KEY_UP:
             state.ui_state.log_scroll_pos = max(0, state.ui_state.log_scroll_pos - 1)
             return True
-        if key == curses.KEY_LEFT:
+        elif key == curses.KEY_LEFT:
             state.ui_state.log_viewer_active = False
-            return True
-        return False
-
-    def _handle_discord_logs_viewer_input(self, key) -> bool:
-        """Handle input in Discord logs viewer mode."""
-        state = self.state_manager.state
-        if key == curses.KEY_DOWN:
-            max_scroll = max(0, len(state.ui_state.log_content) - 1)
-            state.ui_state.log_scroll_pos = min(
-                max_scroll, state.ui_state.log_scroll_pos + 1
-            )
-            return True
-        if key == curses.KEY_UP:
-            state.ui_state.log_scroll_pos = max(0, state.ui_state.log_scroll_pos - 1)
-            return True
-        if key in [ord("q"), 27, ord("d"), curses.KEY_LEFT]:
-            state.ui_state.discord_logs_viewer_active = False
-            return True
-        if key == ord("r"):
-            # Refresh Discord logs from file
-            from utils.logger import discord_logger  # noqa: C0415
-
-            log_content = discord_logger.get_log_file_content(max_lines=500)
-            state.ui_state.log_content = log_content
-            state.ui_state.log_scroll_pos = max(0, len(log_content) - 20)
             return True
         return False
 
@@ -261,30 +248,23 @@ class InputHandler:
                 0, state.ui_state.selected_mod_idx - 1
             )
             return True
-        if key == curses.KEY_DOWN:
+        elif key == curses.KEY_DOWN:
             if state.ui_state.mods:
                 state.ui_state.selected_mod_idx = min(
                     len(state.ui_state.mods) - 1, state.ui_state.selected_mod_idx + 1
                 )
             return True
-        if key == ord("\n"):
+        elif key == ord("\n"):
             callback = self.action_callbacks.get("toggle_mod")
             if callback:
                 callback()
             return True
-        if key == ord("a"):
+        elif key == ord("a"):
             callback = self.action_callbacks.get("add_mod")
             if callback:
                 callback()
             return True
-        if key in [ord("q"), 27, ord("m"), curses.KEY_LEFT]:
+        elif key in [ord("q"), 27, ord("m"), curses.KEY_LEFT]:
             state.ui_state.mods_viewer_active = False
             return True
         return False
-
-    def _handle_discord_toggle(self, stdscr, key) -> bool:
-        """Handle F10 - Toggle Discord bot on/off."""
-        callback = self.action_callbacks.get("toggle_discord")
-        if callback:
-            callback()
-        return True
