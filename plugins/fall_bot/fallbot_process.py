@@ -241,6 +241,9 @@ class FishBotClient(discord.Client):
 
 def run_bot_process(token, command_queue, request_queue, log_queue):
     """Entry point for the separate process."""
+    # Silence discord gateway logs
+    import logging
+    logging.getLogger("discord").setLevel(logging.WARNING)
 
     # Setup intents
     intents = discord.Intents.default()
@@ -300,6 +303,6 @@ def run_bot_process(token, command_queue, request_queue, log_queue):
 
     # --- RUN ---
     try:
-        client.run(token)
+        client.run(token, log_handler=None)
     except Exception as e: # pylint: disable=broad-exception-caught
         log_queue.put(("ERROR", f"Bot crashed: {e}"))

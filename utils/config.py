@@ -291,3 +291,34 @@ def write_cluster_token(token: str) -> bool:
     except (IOError, OSError) as e:
         print(f"Error writing token: {e}", file=sys.stderr)
         return False
+
+
+def load_env_keys() -> None:
+    """
+    Loads Discord configuration from key.conf into environment variables.
+    Checks inside ~/.config/dontstarve/key.conf and ./key.conf.
+    """
+    paths = [
+        CONFIG_DIR / "key.conf",
+        Path(__file__).parent.parent / "key.conf",
+    ]
+
+    for p in paths:
+        if p.is_file():
+            try:
+                with p.open("r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        
+                        # Match KEY="VALUE" or KEY=VALUE
+                        match = re.match(r'^\s*([^#\s=]+)\s*=\s*"?([^"]*)"?', line)
+                        if match:
+                            key, value = match.groups()
+                            # Only set if not already set by actual environment
+                            if key not in os.environ:
+                                os.environ[key] = value
+                return # Stop after first found file
+            except (IOError, OSError) as e:
+                print(f"Warning: Could not read {p}: {e}", file=sys.stderr)

@@ -66,6 +66,7 @@ class StatusManager:  # pylint: disable=too-many-instance-attributes
             "days_left": "Unknown",
             "phase": "Unknown",
             "players": [],
+            "memory_usage": 0.0,
             "shards": {},
         }
         all_players = {}
@@ -86,6 +87,7 @@ class StatusManager:  # pylint: disable=too-many-instance-attributes
                 )
 
         combined_status["players"] = list(all_players.values())
+        combined_status["memory_usage"] = self.get_memory_usage()
         return combined_status
 
     def _parse_shard_log(self, shard_name: str) -> Tuple[Dict, Dict]:
@@ -429,9 +431,13 @@ class StatusManager:  # pylint: disable=too-many-instance-attributes
             # Find DST processes
             for proc in psutil.process_iter(["pid", "name", "cmdline"]):
                 try:
-                    cmdline = " ".join(proc.info["cmdline"] or [])
-                    if "dontstarve_dedicated_server" in cmdline:
-                        total_memory += proc.info["memory_info"].rss / 1024 / 1024  # MB
+                    name = proc.info.get("name", "")
+                    cmdline = " ".join(proc.info.get("cmdline") or [])
+                    
+                    # Match both generic and nullrenderer binaries
+                    if ("dontstarve_dedicated_server" in name or 
+                        "dontstarve_dedicated_server" in cmdline):
+                        total_memory += proc.memory_info().rss / 1024 / 1024  # MB
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
 

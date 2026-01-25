@@ -14,6 +14,14 @@ class ChatManager:
     """Manages game chat functionality."""
 
     @staticmethod
+    def get_chat_log_path():
+        """Returns the path to the chat log file."""
+        config = get_game_config()
+        cluster_name = config.get("CLUSTER_NAME", "MyDediServer")
+        dst_dir = config.get("DONTSTARVE_DIR")
+        return dst_dir / cluster_name / "Master" / "server_chat_log.txt"
+
+    @staticmethod
     def get_chat_logs(lines: int = 50) -> List[str]:
         """Gets the latest chat messages from the game chat log."""
         config = get_game_config()

@@ -16,6 +16,10 @@ from ui.app import main  # noqa: E402,C0413  # pylint: disable=wrong-import-posi
 if __name__ == "__main__":
     import curses
     from utils.logger import setup_logging
+    from utils.config import load_env_keys
+
+    # Load Discord keys
+    load_env_keys()
 
     # Setup logging
     setup_logging()

@@ -3,6 +3,7 @@
 
 """Background task coordinator."""
 
+import os
 import threading
 import time
 from typing import Callable
@@ -126,11 +127,26 @@ class BackgroundCoordinator:
                     self.status_manager.request_status_update()
                 self.state_manager.update_timing(last_status_poll_time=current_time)
 
-            # Chat logs refresh (every 5 seconds)
-            if current_time - state.timing_state.last_chat_read_time > 5.0:
-                chat_logs = ChatManager.get_chat_logs(50)
-                state.ui_state.cached_chat_logs = chat_logs
-                self.event_bus.publish(Event(EventType.CHAT_MESSAGE, chat_logs))
+            # Chat logs refresh (every 0.2 seconds)
+            if current_time - state.timing_state.last_chat_read_time > 0.2:
+                log_path = ChatManager.get_chat_log_path()
+                if log_path and log_path.exists():
+                    try:
+                        stat = os.stat(log_path)
+                        if (stat.st_size != state.timing_state.last_chat_file_size or 
+                            stat.st_mtime != state.timing_state.last_chat_file_mtime):
+                            
+                            chat_logs = ChatManager.get_chat_logs(50)
+                            state.ui_state.cached_chat_logs = chat_logs
+                            self.event_bus.publish(Event(EventType.CHAT_MESSAGE, chat_logs))
+                            
+                            self.state_manager.update_timing(
+                                last_chat_file_size=stat.st_size,
+                                last_chat_file_mtime=stat.st_mtime
+                            )
+                    except Exception: # pylint: disable=broad-exception-caught
+                        pass
+                
                 self.state_manager.update_timing(last_chat_read_time=current_time)
 
             time.sleep(0.1)

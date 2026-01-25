@@ -3,6 +3,8 @@ import os
 import logging
 import multiprocessing
 import queue
+import re
+import collections
 
 # Validating local import for fallbot_process
 # pylint: disable=import-error, wrong-import-position
@@ -36,6 +38,8 @@ class DiscordBotPlugin(IPlugin):
         self.event_bus = None
         self.chat_sub_id = None
         self.last_chat_logs = []
+        self.initial_sync = True
+        self.sent_messages = collections.deque(maxlen=20)
 
     def on_load(self, config, manager_service, event_bus=None):
         self.manager = manager_service
@@ -48,6 +52,9 @@ class DiscordBotPlugin(IPlugin):
         if not token:
             logger.warning("DISCORD_BOT_TOKEN not set, skipping Discord Bot start.")
             return
+
+        # Silence discord gateway logs
+        logging.getLogger("discord").setLevel(logging.WARNING)
 
         self.command_queue = multiprocessing.Queue()
         self.request_queue = multiprocessing.Queue()
@@ -247,7 +254,8 @@ class DiscordBotPlugin(IPlugin):
             # data = {"message": "...", "shard": "Master"}
             msg = data.get("message")
             shard = data.get("shard", "Master")
-            self.manager.send_chat_message(shard, f"[Discord/App] {msg}")
+            self.sent_messages.append(msg)
+            self.manager.send_chat_message(shard, msg)
 
     def _on_chat_event(self, event):
         """Handle chat message from the game."""
@@ -281,6 +289,11 @@ class DiscordBotPlugin(IPlugin):
         if not hasattr(self, "last_chat_logs"):
             self.last_chat_logs = []
 
+        if self.initial_sync:
+            self.last_chat_logs = chat_logs[-100:]
+            self.initial_sync = False
+            return
+
         new_msgs = []
         for msg in chat_logs:
             if msg not in self.last_chat_logs:
@@ -292,14 +305,35 @@ class DiscordBotPlugin(IPlugin):
                 if " [Whisper]" in msg:
                     continue
                 # Extract user?
-                # Format usually: "[00:00:00] : [Say] User: Message"
-                if "[Say]" in msg:
-                    # Clean it up for discord
-                    # e.g. remove timestamp
-                    # This is a bit brittle without regex, but let's try basic
-                    # "[00:00:00] : [Say] " length is 20 chars
-                    content = msg[20:] if len(msg) > 20 else msg
-                    new_msgs.append(content)
+                # Extract Name: Message using regex
+                # Supported tags: [Say], [Announcement], [Death Announcement], etc.
+                tag_emojis = {
+                    "Say": "",
+                    "Announcement": "📢",
+                    "Join Announcement": "📥",
+                    "Leave Announcement": "📤",
+                    "Death Announcement": "💀",
+                    "Resurrect Announcement": "💖",
+                    "Skin Announcement": "🎁",
+                    "Vote Announcement": "🗳️",
+                }
+                
+                # Regex to match [Tag] (ID) Content
+                # We target the tag after the first colon (timestamp separator)
+                match = re.search(r":\s*\[(Say|.*?Announcement)\]\s*(?:\([^)]*\))?\s*(.*)", msg)
+                if match:
+                    tag = match.group(1)
+                    content = match.group(2).strip()
+                    
+                    # Check if this is an echo of a message we just sent
+                    if content in self.sent_messages:
+                        self.sent_messages.remove(content)
+                        continue
+                        
+                    emoji = tag_emojis.get(tag, "")
+                    
+                    full_msg = f"{emoji} {content}".strip() if emoji else content
+                    new_msgs.append(full_msg)
 
         self.last_chat_logs = chat_logs[-100:]  # Keep last 100
 

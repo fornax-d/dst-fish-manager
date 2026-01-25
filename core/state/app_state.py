@@ -62,6 +62,8 @@ class TimingState:
     last_refresh_time: float = 0.0
     last_status_refresh_time: float = 0.0
     last_chat_read_time: float = 0.0
+    last_chat_file_size: int = 0
+    last_chat_file_mtime: float = 0.0
     last_draw_time: float = 0.0
     last_status_poll_time: float = 0.0
 
