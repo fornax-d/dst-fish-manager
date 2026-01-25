@@ -6,7 +6,7 @@
 import curses
 
 
-class Theme:
+class Theme:  # pylint: disable=too-few-public-methods
     """Catppuccin Mocha theme for curses."""
 
     def __init__(self):
@@ -58,12 +58,6 @@ class Theme:
         curses.init_pair(6, self.colors["title"], self.colors["bg"])  # Border
         curses.init_pair(7, self.colors["bg"], self.colors["fg"])  # Highlight
         curses.init_pair(8, self.colors["fg"], self.colors["bg"])  # Footer
-        curses.init_pair(
-            9, self.colors["title"], self.colors["bg"]
-        )  # Discord messages (blue)
-        curses.init_pair(
-            10, self.colors["success"], self.colors["bg"]
-        )  # Game chat messages (green)
 
         self.pairs = {
             "default": curses.color_pair(1),
@@ -74,79 +68,21 @@ class Theme:
             "border": curses.color_pair(6),
             "highlight": curses.color_pair(7),
             "footer": curses.color_pair(8),
-            "discord": curses.color_pair(9),
-            "game_chat": curses.color_pair(10),
         }
 
 
-class BoxChars:
+class BoxChars:  # pylint: disable=too-few-public-methods
     """Box drawing characters."""
 
-    def __init__(self):
-        self.chars = {
-            "tl": "╭",
-            "tr": "╮",
-            "bl": "╰",
-            "br": "╯",
-            "v": "│",
-            "h": "─",
-            "ml": "├",
-            "mr": "┤",
-            "mt": "┬",
-            "mb": "┴",
-        }
-
-    @staticmethod
-    def draw_box_with_title(
-        win, box_chars, theme, title: str = "", use_border_attr: bool = False
-    ) -> None:
-        """
-        Draw a box with optional title on a curses window.
-
-        Args:
-            win: curses window to draw on
-            box_chars: BoxChars instance with character definitions
-            theme: Theme instance with color pairs
-            title: Optional title to display in the box header
-            use_border_attr: If True, use border color attribute
-        """
-        try:
-            h, w = win.getmaxyx()
-            if h < 2 or w < 2:
-                return
-
-            chars = box_chars.chars
-
-            if use_border_attr and theme:
-                win.attron(theme.pairs["border"])
-
-            # Draw corners
-            win.addstr(0, 0, chars["tl"])
-            win.addstr(0, w - 1, chars["tr"])
-            win.addstr(h - 1, 0, chars["bl"])
-            try:
-                win.addstr(h - 1, w - 1, chars["br"])
-            except curses.error:
-                try:
-                    win.insstr(h - 1, w - 1, chars["br"])
-                except curses.error:
-                    pass
-
-            # Draw lines
-            for x in range(1, w - 1):
-                win.addstr(0, x, chars["h"])
-                win.addstr(h - 1, x, chars["h"])
-            for y in range(1, h - 1):
-                win.addstr(y, 0, chars["v"])
-                win.addstr(y, w - 1, chars["v"])
-
-            if use_border_attr and theme:
-                win.attroff(theme.pairs["border"])
-
-            # Draw title
-            if title and w > len(title) + 4 and theme:
-                win.addstr(
-                    0, 2, f" {title} ", theme.pairs["title"] | curses.A_BOLD
-                )
-        except curses.error:
-            pass
+    chars = {
+        "tl": "╭",
+        "tr": "╮",
+        "bl": "╰",
+        "br": "╯",
+        "v": "│",
+        "h": "─",
+        "ml": "├",
+        "mr": "┤",
+        "mt": "┬",
+        "mb": "┴",
+    }

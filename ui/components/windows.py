@@ -6,6 +6,8 @@
 import curses
 from typing import Optional
 
+from utils.drawing import draw_box
+
 
 class WindowManager:
     """Manages window layout and creation."""
@@ -84,13 +86,7 @@ class WindowManager:
 
     def draw_box(self, win: curses.window, title: str = "") -> None:
         """Draw a themed box with title on a window."""
-        if not self.theme or not self.box_chars:
-            return
-        from ui.rendering.themes import BoxChars  # noqa: C0415
-
-        BoxChars.draw_box_with_title(
-            win, self.box_chars, self.theme, title, use_border_attr=True
-        )
+        draw_box(win, self.theme, self.box_chars.chars, title)
 
     def refresh_all(self) -> None:
         """Refresh all windows."""

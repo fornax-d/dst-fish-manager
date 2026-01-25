@@ -5,7 +5,7 @@
 
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List
 
 from utils.config import Shard
 
@@ -19,24 +19,53 @@ class ServerStatus:
     days_left: str = "---"
     phase: str = "---"
     players: List[Dict[str, str]] = field(default_factory=list)
+    master_offline_count: int = 0
+    memory_usage: float = 0.0
+
+
+@dataclass
+class SelectionState:
+    """Selection-related state."""
+
+    selected_shard_idx: int = 0
+    selected_mod_idx: int = 0
+    selected_action_idx: int = 0
+    selected_global_action_idx: int = -1  # -1 means not selected
+
+
+@dataclass
+class ViewerState:
+    """Viewer-related state."""
+
+    log_viewer_active: bool = False
+    mods_viewer_active: bool = False
+    log_content: List[str] = field(default_factory=list)
+    log_scroll_pos: int = 0
 
 
 @dataclass
 class UIState:
     """UI-specific state."""
 
-    selected_shard_idx: int = 0
-    selected_mod_idx: int = 0
-    selected_action_idx: int = 0
-    selected_global_action_idx: int = -1  # -1 means not selected
-    log_viewer_active: bool = False
-    mods_viewer_active: bool = False
-    discord_logs_viewer_active: bool = False
-    log_content: List[str] = field(default_factory=list)
-    log_scroll_pos: int = 0
+    selection_state: SelectionState = field(default_factory=SelectionState)
+    viewer_state: ViewerState = field(default_factory=ViewerState)
     mods: List[Dict[str, Any]] = field(default_factory=list)
     cached_chat_logs: List[str] = field(default_factory=list)
-    seen_chat_messages: Set[str] = field(default_factory=set)
+    is_working: bool = False
+    need_redraw: bool = True
+
+
+@dataclass
+class TimingState:
+    """Timing-related state."""
+
+    last_refresh_time: float = 0.0
+    last_status_refresh_time: float = 0.0
+    last_chat_read_time: float = 0.0
+    last_chat_file_size: int = 0
+    last_chat_file_mtime: float = 0.0
+    last_draw_time: float = 0.0
+    last_status_poll_time: float = 0.0
 
 
 @dataclass
@@ -46,19 +75,8 @@ class AppState:
     shards: List[Shard] = field(default_factory=list)
     server_status: ServerStatus = field(default_factory=ServerStatus)
     ui_state: UIState = field(default_factory=UIState)
-    is_working: bool = False
-    need_redraw: bool = True
+    timing_state: TimingState = field(default_factory=TimingState)
     shards_lock: threading.Lock = field(default_factory=threading.Lock)
-
-    # Timing state
-    last_refresh_time: float = 0.0
-    last_status_refresh_time: float = 0.0
-    last_chat_read_time: float = 0.0
-    last_draw_time: float = 0.0
-    last_status_poll_time: float = 0.0
-
-    # Master offline counter
-    master_offline_count: int = 0
 
 
 class StateManager:
@@ -90,18 +108,18 @@ class StateManager:
 
     def set_working(self, is_working: bool) -> None:
         """Set working state."""
-        self._state.is_working = is_working
+        self._state.ui_state.is_working = is_working
 
     def request_redraw(self) -> None:
         """Request UI redraw."""
-        self._state.need_redraw = True
+        self._state.ui_state.need_redraw = True
 
     def clear_redraw_flag(self) -> None:
         """Clear redraw flag."""
-        self._state.need_redraw = False
+        self._state.ui_state.need_redraw = False
 
     def update_timing(self, **kwargs) -> None:
         """Update timing values."""
         for key, value in kwargs.items():
-            if hasattr(self._state, key):
-                setattr(self._state, key, value)
+            if hasattr(self._state.timing_state, key):
+                setattr(self._state.timing_state, key, value)

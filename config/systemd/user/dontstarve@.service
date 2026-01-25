@@ -7,9 +7,6 @@ Wants=network-online.target
 Type=exec
 KillSignal=SIGINT
 TimeoutStopSec=30s
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=dst-%i
 
 EnvironmentFile=-%h/.config/dontstarve/config
 WorkingDirectory=%h

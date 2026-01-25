@@ -4,8 +4,8 @@
 """Configuration management with cluster and branch switching."""
 
 import os
-import re
 import sys
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List
@@ -102,8 +102,8 @@ class ConfigManager:
 
             self._config_cache = config
             return True
-        except (OSError, PermissionError) as e:
-            print(f"Error writing config: {e}", file=sys.stderr)  # noqa: T201
+        except (IOError, ValueError) as e:
+            print(f"Error writing config: {e}", file=sys.stderr)
             return False
 
     def update_config_value(self, key: str, value: str) -> bool:
@@ -147,18 +147,30 @@ class ConfigManager:
 
         # Then check numeric ID subdirectories (client clusters - usually ignore for servers)
         if not clusters:  # Only check client clusters if no server clusters found
-            for item in dst_dir.iterdir():
-                if item.is_dir() and item.name.isdigit():
-                    for subitem in item.iterdir():
-                        if subitem.is_dir() and (subitem / "cluster.ini").exists():
-                            master_path = subitem / "Master"
-                            if (
-                                master_path.exists()
-                                and (master_path / "server.ini").exists()
-                            ):
-                                clusters.append(subitem.name)
+            clusters.extend(self._scan_client_clusters(dst_dir))
 
         return sorted(set(clusters))
+
+    def _scan_client_clusters(self, dst_dir: Path) -> List[str]:
+        """Scan for client-hosted clusters."""
+        clusters = []
+        for item in dst_dir.iterdir():
+            if not item.is_dir() or not item.name.isdigit():
+                continue
+
+            for subitem in item.iterdir():
+                if subitem.is_dir():
+                    if self._is_valid_cluster(subitem):
+                        clusters.append(subitem.name)
+        return clusters
+
+    def _is_valid_cluster(self, path: Path) -> bool:
+        """Check if path is a valid cluster directory."""
+        return (
+            (path / "cluster.ini").exists()
+            and (path / "Master").exists()
+            and (path / "Master" / "server.ini").exists()
+        )
 
     def auto_detect_cluster(self) -> str:
         """Auto-detect first available cluster with proper shard structure."""
@@ -263,3 +275,50 @@ def read_desired_shards() -> List[str]:
         for line in lines
         if line.strip() and not line.strip().startswith("#")
     ]
+
+
+def write_cluster_token(token: str) -> bool:
+    """Writes the cluster token to cluster_token.txt."""
+    game_config = get_game_config()
+    dst_dir = game_config["DONTSTARVE_DIR"]
+    cluster_name = game_config["CLUSTER_NAME"]
+
+    token_path = dst_dir / cluster_name / "cluster_token.txt"
+    try:
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text(token.strip() + "\n", encoding="utf-8")
+        return True
+    except (IOError, OSError) as e:
+        print(f"Error writing token: {e}", file=sys.stderr)
+        return False
+
+
+def load_env_keys() -> None:
+    """
+    Loads Discord configuration from key.conf into environment variables.
+    Checks inside ~/.config/dontstarve/key.conf and ./key.conf.
+    """
+    paths = [
+        CONFIG_DIR / "key.conf",
+        Path(__file__).parent.parent / "key.conf",
+    ]
+
+    for p in paths:
+        if p.is_file():
+            try:
+                with p.open("r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        
+                        # Match KEY="VALUE" or KEY=VALUE
+                        match = re.match(r'^\s*([^#\s=]+)\s*=\s*"?([^"]*)"?', line)
+                        if match:
+                            key, value = match.groups()
+                            # Only set if not already set by actual environment
+                            if key not in os.environ:
+                                os.environ[key] = value
+                return # Stop after first found file
+            except (IOError, OSError) as e:
+                print(f"Warning: Could not read {p}: {e}", file=sys.stderr)

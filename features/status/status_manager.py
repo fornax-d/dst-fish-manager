@@ -3,241 +3,182 @@
 
 """Status manager for handling server status operations."""
 
+import logging
 import os
 import re
+import threading
 import time
-from pathlib import Path
-from typing import Dict, Optional
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
 
-from utils.config import get_game_config
+from features.chat.chat_manager import ChatManager
+from utils.config import get_game_config, read_desired_shards
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 
-class StatusManager:
+@dataclass
+class ModStatus:
+    """Mod status information."""
+
+    id: str
+    name: str
+    enabled: bool
+    loaded_in_game: bool = False
+    error_count: int = 0
+    last_error: Optional[str] = None
+    configuration_valid: bool = True
+
+
+class StatusManager:  # pylint: disable=too-many-instance-attributes
     """Manages server status operations."""
 
-    @staticmethod
-    def _get_default_status() -> Dict:
-        """Get default status structure."""
-        return {
-            "season": "Unknown",
-            "day": "Unknown",
-            "days_left": "Unknown",
-            "phase": "Unknown",
-            "players": [],
-            "shards": {},
-        }
+    def __init__(self):
+        self.config = get_game_config()
+        self.dst_dir = self.config.get("DONTSTARVE_DIR")
+        self.cluster_name = self.config.get("CLUSTER_NAME", "MyDediServer")
+        self.install_dir = self.config.get("INSTALL_DIR")
 
-    @staticmethod
-    def _parse_shard_log(log_path: Path) -> Dict:
-        """Parse individual shard log file for status information."""
-        shard_status = {}
+        # Mod monitoring state
+        self._mod_status_cache: Dict[str, ModStatus] = {}
+        self._last_update = 0
+        self._update_lock = threading.Lock()
+        self.logger = logging.getLogger(__name__)
 
-        if not log_path.exists():
-            return {"error": f"Log file not found: {log_path}"}
-
-        try:
-            # Read only the last 32KB of the log file for better performance
-            # and to focus on the most recent information
-            with open(log_path, "rb") as f:
-                f.seek(0, os.SEEK_END)
-                size = f.tell()
-                f.seek(max(0, size - 32768), os.SEEK_SET)
-                content = f.read().decode("utf-8", errors="ignore")
-
-            # Parse Season and Day from c_dumpseasons() - using approach from old implementation
-            season_matches = re.findall(
-                r"(?:\[Season\] Season:\s*|:\s*)(\w+)\s*(\d+)\s*(?:,\s*Remaining:|\s*->)\s*(\d+)\s*days?",
-                content,
-            )
-            if season_matches:
-                s_name, s_elapsed, s_rem = season_matches[-1]
-                shard_status["season"] = s_name.capitalize()
-                shard_status["day"] = str(int(s_elapsed) + 1)
-                shard_status["days_left"] = s_rem
-            else:
-                # Fallback to simpler patterns if c_dumpseasons output not found
-                season_patterns = [
-                    r"^(autumn|spring|summer|winter) \d+ -> \d+ days \(\d+ %\) cycle",
-                    r"World \d+ is now in (\w+)",
-                    r"Season: (\w+)",
-                    r"Current season: (\w+)",
-                    r"Setting season to (\w+)",
-                    r"\[Shard\] Season: (\w+)",
-                    r"Season is now (\w+)",
-                    r"Season changed to (\w+)",
-                ]
-                for pattern in season_patterns:
-                    season_match = re.search(
-                        pattern, content, re.MULTILINE | re.IGNORECASE
-                    )
-                    if season_match:
-                        shard_status["season"] = season_match.group(1).capitalize()
-                        break
-
-            # Parse Day from explicit poll or natural World State logs
-            if shard_status.get("day") == "Unknown":
-                day_matches = re.findall(
-                    r"(?:Current day:|\[World State\] day:)\s*(\d+)", content
-                )
-                if day_matches:
-                    last_match = day_matches[-1]
-                    if f"Current day: {last_match}" in content:
-                        shard_status["day"] = last_match
-                    else:
-                        shard_status["day"] = str(int(last_match) + 1)
-
-            # Parse days left if not already set by c_dumpseasons
-            if shard_status.get("days_left") == "Unknown":
-                days_left_patterns = [
-                    r"^(autumn|spring|summer|winter) \d+ -> (\d+) days \(\d+ %\) cycle",
-                    r"Days left in season: (\d+)",
-                    r"Season days remaining: (\d+)",
-                    r"Days until season change: (\d+)",
-                    r"Season will end in (\d+) days",
-                    r"(\d+) days left in this season",
-                ]
-                for pattern in days_left_patterns:
-                    days_left_match = re.search(
-                        pattern, content, re.MULTILINE | re.IGNORECASE
-                    )
-                    if days_left_match:
-                        if pattern.startswith("^(autumn|spring|summer|winter)"):
-                            shard_status["days_left"] = int(days_left_match.group(2))
-                        else:
-                            shard_status["days_left"] = int(days_left_match.group(1))
-                        break
-
-            # Extract phase information - multiple patterns
-            phase_patterns = [
-                r"Current phase: (\w+)",
-                r"Clock phase: (\w+)",
-                r"Phase: (\w+)",
-            ]
-            for pattern in phase_patterns:
-                phase_match = re.search(pattern, content)
-                if phase_match:
-                    shard_status["phase"] = phase_match.group(1)
-                    break
-
-            # Extract players - focus on recent activity and listallplayers output
-            players = []
-            seen_players = set()
-            all_players = {}  # Track all players across shards using KU_ID as key
-
-            # Pattern for c_listallplayers output - look for actual player list
-            # After c_listallplayers() command, server outputs player data
-            player_pattern_list = re.compile(r"\[(\w+)\]\s*(\d+)")
-            player_pattern_ku = re.compile(r"(\w+)\s*(\d+)")
-
-            # Pattern for chat messages: "[Say] (KU_xxx) PlayerName: message"
-            player_pattern_chat = re.compile(r"\[Say\] \([^)]+\) (\w+):")
-
-            # Pattern for join announcements: "[Join Announcement] PlayerName"
-            player_pattern_join = re.compile(r"\[Join Announcement\] (\w+)")
-
-            # Pattern for character information: "PlayerName (character_name)"
-            player_char_pattern = re.compile(r"(\w+)\s+\(([^)]+)\)")
-
-            # Parse Players using the approach from the old implementation
-            # Split content by "All players:" marker to find the player list section
-            dumps = content.split("All players:")
-            last_dump = dumps[-1] if dumps else content
-
-            # Try multiple patterns to find players
-            player_matches = []
-
-            # Pattern 1: [id] (KU_id) name <char>
-            pattern1_matches = re.findall(
-                r"\[(\d+)\]\s+\((KU_[\w-]+)\)\s+(.*?)\s+<(.*?)>", last_dump
-            )
-            if pattern1_matches:
-                for match in pattern1_matches:
-                    player_matches.append((match[1], match[2], match[3]))
-
-            # Pattern 2: [id] (KU_id) name <char> (alternative format)
-            pattern2_matches = re.findall(
-                r"\[(\d+)\]\s+\((KU_[\w-]+)\)\s+(.*?)\s+<([^>]+)>", last_dump
-            )
-            if pattern2_matches:
-                for match in pattern2_matches:
-                    player_matches.append((match[1], match[2], match[3]))
-
-            # Pattern 3: (KU_id) name <char> (without [id] prefix)
-            pattern3_matches = re.findall(
-                r"\s+\((KU_[\w-]+)\)\s+(.*?)\s+<(.*?)>", last_dump
-            )
-            if pattern3_matches:
-                for match in pattern3_matches:
-                    player_matches.append(match)
-
-            shard_players = {}
-            if player_matches:
-                for ku_id, name, char in player_matches:
-                    # Use KU_ID as key to avoid duplicates and ensure uniqueness
-                    shard_players[ku_id] = {"name": name, "char": char}
-                    all_players[ku_id] = {"name": name, "char": char}
-
-            shard_status["players"] = list(shard_players.values())
-
-        except (OSError, ValueError, KeyError) as e:
-            shard_status["error"] = f"Error parsing shard log: {e}"
-
-        return shard_status
-
-    @staticmethod
-    def get_server_status(shard_name: Optional[str] = None) -> Dict:
-        """Get server status for specified shard or all shards."""
-        from utils.config import read_desired_shards  # noqa: C0415
-
-        config = get_game_config()
-        cluster_name = config.get("CLUSTER_NAME", "MyDediServer")
-        dst_dir = config.get("DONTSTARVE_DIR")
-
+    def get_server_status(self, shard_name: Optional[str] = None) -> Dict:
+        """Gets server status information."""
         # Get all shards if none specified
         if shard_name is None:
             shard_names = read_desired_shards()
         else:
             shard_names = [shard_name]
 
-        # Initialize with default values
-        combined_status = StatusManager._get_default_status()
-        all_players = {}  # Track all players across shards using KU_ID as key
+        return self._aggregate_server_status(shard_names)
+
+    def _aggregate_server_status(self, shard_names: List[str]) -> Dict:
+        """Aggregate status from all shards."""
+        combined_status = {
+            "season": "Unknown",
+            "day": "Unknown",
+            "days_left": "Unknown",
+            "phase": "Unknown",
+            "players": [],
+            "memory_usage": 0.0,
+            "shards": {},
+        }
+        all_players = {}
 
         for current_shard in shard_names:
-            log_path = dst_dir / cluster_name / current_shard / "server_log.txt"
+            shard_data, players_dict = self._parse_shard_log(current_shard)
+            combined_status["shards"][current_shard] = shard_data
+            all_players.update(players_dict)
 
-            if not log_path.exists():
-                combined_status["shards"][current_shard] = {
-                    "error": f"Log file not found for shard '{current_shard}'",
-                    "players": [],
-                }
-                continue
+            if current_shard == "Master" and "error" not in shard_data:
+                combined_status.update(
+                    {
+                        "season": shard_data.get("season", "Unknown"),
+                        "day": shard_data.get("day", "Unknown"),
+                        "days_left": shard_data.get("days_left", "Unknown"),
+                        "phase": shard_data.get("phase", "Unknown"),
+                    }
+                )
 
-            # Parse shard status using helper method
-            shard_status = StatusManager._parse_shard_log(log_path)
-
-            # Update combined status with valid shard data
-            if "error" not in shard_status:
-                for key in ["season", "day", "phase"]:
-                    if shard_status.get(key, "Unknown") != "Unknown":
-                        combined_status[key] = shard_status[key]
-
-                # Merge players from each shard
-                for player in shard_status.get("players", []):
-                    all_players[player["name"]] = player
-
-            combined_status["shards"][current_shard] = shard_status
-
-        # Combine all players from all shards
         combined_status["players"] = list(all_players.values())
-
+        combined_status["memory_usage"] = self.get_memory_usage()
         return combined_status
+
+    def _parse_shard_log(self, shard_name: str) -> Tuple[Dict, Dict]:
+        """Parse log file for a single shard. Returns (shard_status, players_dict)."""
+        log_path = self.dst_dir / self.cluster_name / shard_name / "server_log.txt"
+
+        if not log_path.exists():
+            return {
+                "error": f"Log file not found for shard '{shard_name}'",
+                "players": [],
+            }, {}
+
+        try:
+            with log_path.open("rb") as f:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(max(0, size - 32768), os.SEEK_SET)
+                content = f.read().decode("utf-8", errors="ignore")
+
+            shard_status = {
+                "season": "Unknown",
+                "day": "Unknown",
+                "days_left": "Unknown",
+                "phase": "Unknown",
+                "players": [],
+            }
+
+            self._parse_season_and_day(content, shard_status)
+            self._parse_phase(content, shard_status)
+            players_dict = self._parse_players(content, shard_status)
+
+            return shard_status, players_dict
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            return {
+                "error": f"Error reading shard '{shard_name}': {e}",
+                "players": [],
+            }, {}
+
+    def _parse_season_and_day(self, content: str, status: Dict) -> None:
+        """Parse season and day from log content."""
+        # Parse Season and Day from c_dumpseasons()
+        season_matches = re.findall(
+            r"(?:\[Season\] Season:\s*|:\s*)(\w+)\s*(\d+)\s*"
+            r"(?:,\s*Remaining:|\s*->)\s*(\d+)\s*days?",
+            content,
+        )
+        if season_matches:
+            s_name, s_elapsed, s_rem = season_matches[-1]
+            status["season"] = s_name.capitalize()
+            status["day"] = str(int(s_elapsed) + 1)
+            status["days_left"] = s_rem
+
+        # Parse Day from explicit poll or natural World State logs
+        day_matches = re.findall(
+            r"(?:Current day:|\[World State\] day:)\s*(\d+)", content
+        )
+        if day_matches:
+            last_match = day_matches[-1]
+            if f"Current day: {last_match}" in content:
+                status["day"] = last_match
+            else:
+                status["day"] = str(int(last_match) + 1)
+
+    def _parse_phase(self, content: str, status: Dict) -> None:
+        """Parse phase from log content."""
+        phase_matches = re.findall(
+            r"(?:Current phase:|\[World State\] phase:)\s*(\w+)", content
+        )
+        if phase_matches:
+            status["phase"] = phase_matches[-1].capitalize()
+
+    def _parse_players(self, content: str, status: Dict) -> Dict:
+        """Parse players from log content. Returns dict of players by KU_ID."""
+        dumps = content.split("All players:")
+        last_dump = dumps[-1] if dumps else content
+
+        player_matches = re.findall(
+            r"\[\d+\]\s+\((KU_[\w-]+)\)\s+(.*?)\s+<(.*?)>", last_dump
+        )
+        shard_players = {}
+        if player_matches:
+            for ku_id, name, char in player_matches:
+                shard_players[ku_id] = {"name": name, "char": char}
+
+        status["players"] = list(shard_players.values())
+        return shard_players
 
     @staticmethod
     def request_status_update(shard_name: Optional[str] = None) -> bool:
         """Sends Lua commands to the server to dump current status into the logs."""
-        from features.chat.chat_manager import ChatManager  # noqa: C0415
-        from utils.config import read_desired_shards  # noqa: C0415
 
         # Get all shards if none specified
         if shard_name is None:
@@ -259,7 +200,249 @@ class StatusManager:
                 s, _ = ChatManager.send_command(current_shard, cmd)
                 if not s:
                     overall_success = False
-                # Increased delay to give server more time to process commands
-                time.sleep(1.0)
+                time.sleep(0.5)
 
         return overall_success
+
+    def get_mod_status(self, workshop_id: str) -> Optional[ModStatus]:
+        """Get status for a specific mod."""
+        with self._update_lock:
+            return self._mod_status_cache.get(workshop_id)
+
+    def update_all_mod_status(self, mods_list: List[Dict]):
+        """Update status for all mods in list."""
+        try:
+            for mod_info in mods_list:
+                workshop_id = mod_info["id"]
+
+                if workshop_id not in self._mod_status_cache:
+                    self._mod_status_cache[workshop_id] = ModStatus(
+                        id=workshop_id,
+                        name=mod_info.get("name", workshop_id),
+                        enabled=mod_info.get("enabled", False),
+                    )
+
+                mod_status = self._mod_status_cache[workshop_id]
+                mod_status.enabled = mod_info.get("enabled", False)
+
+                # Check if mod is loaded in game logs
+                mod_status.loaded_in_game = self._check_mod_loaded_in_game(workshop_id)
+
+                # Validate mod configuration
+                mod_status.configuration_valid = self._validate_mod_configuration(
+                    workshop_id
+                )
+
+                # Check for mod errors in logs
+                mod_status.error_count, mod_status.last_error = self._check_mod_errors(
+                    workshop_id
+                )
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Broad exception catch is intentional here - we want to handle
+            # any errors during mod status update gracefully
+            self.logger.error("Error updating mod status: %s", e)
+
+    def _check_mod_loaded_in_game(self, workshop_id: str) -> bool:
+        """Check if mod is loaded by examining server logs."""
+        try:
+            # Check in all shard log files
+            cluster_path = self.dst_dir / self.cluster_name
+
+            if not cluster_path.exists():
+                return False
+
+            for shard_dir in cluster_path.iterdir():
+                if not shard_dir.is_dir():
+                    continue
+
+                log_file = shard_dir / "server_log.txt"
+                if not log_file.exists():
+                    continue
+
+                content = log_file.read_text(encoding="utf-8", errors="ignore")
+
+                # Look for mod loading messages
+                patterns = [
+                    rf"Loading mod:.*{workshop_id}",
+                    rf"Mod.*{workshop_id}.*loaded",
+                    rf"Registering mod.*{workshop_id}",
+                ]
+
+                for pattern in patterns:
+                    if re.search(pattern, content, re.IGNORECASE):
+                        return True
+
+            return False
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Broad exception catch is intentional here - we want to handle
+            # any errors during mod loading check gracefully
+            self.logger.error("Error checking if mod %s is loaded: %s", workshop_id, e)
+            return False
+
+    def _validate_mod_configuration(self, workshop_id: str) -> bool:
+        """Validate mod configuration."""
+        try:
+            mod_overrides_path = (
+                self.dst_dir / self.cluster_name / "Master" / "modoverrides.lua"
+            )
+            if not mod_overrides_path.exists():
+                return True  # No overrides is valid
+
+            content = mod_overrides_path.read_text(encoding="utf-8", errors="ignore")
+
+            # Check if mod entry exists and has valid syntax
+            mod_pattern = rf'\["{workshop_id}"\]\s*=\s*\{{([^}}]*)\}}'
+            match = re.search(mod_pattern, content, re.DOTALL)
+
+            if not match:
+                return workshop_id not in content  # Not present is OK
+
+            # Basic syntax validation
+            config_content = match.group(1)
+
+            # Check for balanced braces (basic check)
+            open_braces = config_content.count("{")
+            close_braces = config_content.count("}")
+
+            return open_braces == close_braces
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Broad exception catch is intentional here - we want to handle
+            # any errors during mod configuration validation gracefully
+            self.logger.error(
+                "Error validating mod configuration for %s: %s", workshop_id, e
+            )
+            return False
+
+    def _check_mod_errors(self, workshop_id: str) -> Tuple[int, Optional[str]]:
+        """Check for mod-related errors in server logs."""
+        try:
+            error_count = 0
+            last_error = None
+
+            cluster_path = self.dst_dir / self.cluster_name
+
+            if not cluster_path.exists():
+                return 0, None
+
+            for shard_dir in cluster_path.iterdir():
+                if not shard_dir.is_dir():
+                    continue
+
+                log_file = shard_dir / "server_log.txt"
+                if not log_file.exists():
+                    continue
+
+                content = log_file.read_text(encoding="utf-8", errors="ignore")
+                lines = content.split("\n")
+
+                # Look for recent errors (last 200 lines)
+                recent_lines = lines[-200:]
+
+                for line in recent_lines:
+                    # Look for mod-related error patterns
+                    error_patterns = [
+                        rf".*error.*{workshop_id}.*",
+                        rf".*failed.*{workshop_id}.*",
+                        rf".*{workshop_id}.*error.*",
+                        rf".*mod.*{workshop_id}.*failed.*",
+                    ]
+
+                    for pattern in error_patterns:
+                        if re.search(pattern, line, re.IGNORECASE):
+                            error_count += 1
+                            last_error = line.strip()
+
+            return error_count, last_error
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Broad exception catch is intentional here - we want to handle
+            # any errors during mod error checking gracefully
+            self.logger.error("Error checking mod errors for %s: %s", workshop_id, e)
+            return 0, None
+
+    def get_server_stats_summary(self) -> Dict:
+        """Get a summary of server and mod status."""
+        # Get basic server stats (reuse existing functionality)
+        server_status = self.get_server_status()
+
+        # Count mod status
+        total_mods = len(self._mod_status_cache)
+        enabled_mods = sum(1 for mod in self._mod_status_cache.values() if mod.enabled)
+        loaded_mods = sum(
+            1 for mod in self._mod_status_cache.values() if mod.loaded_in_game
+        )
+        mods_with_errors = sum(
+            1 for mod in self._mod_status_cache.values() if mod.error_count > 0
+        )
+
+        # Get player count
+        player_count = len(server_status.get("players", []))
+
+        # Get season/day info
+        day = server_status.get("day", "Unknown")
+        season = server_status.get("season", "Unknown")
+
+        return {
+            "server_stats": {
+                "player_count": player_count,
+                "day": day,
+                "season": season,
+                "shard_status": server_status.get("shards", {}),
+            },
+            "mod_summary": {
+                "total_mods": total_mods,
+                "enabled_mods": enabled_mods,
+                "loaded_mods": loaded_mods,
+                "mods_with_errors": mods_with_errors,
+            },
+            "last_update": self._last_update,
+        }
+
+    def start_monitoring(self, update_interval: int = 10):
+        """Start background monitoring thread."""
+
+        def monitor_loop():
+            while True:
+                try:
+                    self._last_update = time.time()
+                    # Server status is updated on-demand
+                    time.sleep(update_interval)
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    # Broad exception catch is intentional here - we want to handle
+                    # any errors in the monitoring loop gracefully to keep it running
+                    self.logger.error("Error in monitoring loop: %s", e)
+                    time.sleep(update_interval)
+
+        monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
+        monitor_thread.start()
+        self.logger.info("Started server monitoring with %ss interval", update_interval)
+
+    def get_memory_usage(self) -> float:
+        """Get memory usage for DST processes."""
+        if psutil is None:
+            return 0.0
+
+        total_memory = 0
+
+        try:
+            # Find DST processes
+            for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+                try:
+                    name = proc.info.get("name", "")
+                    cmdline = " ".join(proc.info.get("cmdline") or [])
+                    
+                    # Match both generic and nullrenderer binaries
+                    if ("dontstarve_dedicated_server" in name or 
+                        "dontstarve_dedicated_server" in cmdline):
+                        total_memory += proc.memory_info().rss / 1024 / 1024  # MB
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+            return total_memory
+
+        except ImportError:
+            # psutil not available, skip memory monitoring
+            return 0.0

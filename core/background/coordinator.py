@@ -3,6 +3,7 @@
 
 """Background task coordinator."""
 
+import os
 import threading
 import time
 from typing import Callable
@@ -12,18 +13,22 @@ from core.state.app_state import StateManager
 from features.chat.chat_manager import ChatManager
 from features.shards.shard_manager import ShardManager
 from features.status.status_manager import StatusManager
-from utils.logger import discord_logger
 
 
 class BackgroundCoordinator:
     """Coordinates background tasks and periodic updates."""
 
     def __init__(
-        self, state_manager: StateManager, event_bus: EventBus, manager_service
+        self,
+        state_manager: StateManager,
+        event_bus: EventBus,
+        manager_service,
+        status_manager: StatusManager,
     ):
         self.state_manager = state_manager
         self.event_bus = event_bus
         self.manager_service = manager_service
+        self.status_manager = status_manager
         self._running = False
         self._background_thread = None
 
@@ -70,10 +75,10 @@ class BackgroundCoordinator:
             state = self.state_manager.state
 
             # Periodic shard refresh (every 2 seconds)
-            if current_time - state.last_refresh_time > 2.0:
+            if current_time - state.timing_state.last_refresh_time > 2.0:
                 if (
-                    not state.ui_state.log_viewer_active
-                    and not state.ui_state.mods_viewer_active
+                    not state.ui_state.viewer_state.log_viewer_active
+                    and not state.ui_state.viewer_state.mods_viewer_active
                 ):
                     shard_manager = ShardManager()
                     new_shards = shard_manager.get_shards()
@@ -82,10 +87,10 @@ class BackgroundCoordinator:
                     # Check master offline status
                     master = next((s for s in new_shards if s.name == "Master"), None)
                     if master and master.is_running:
-                        state.master_offline_count = 0
+                        state.server_status.master_offline_count = 0
                     else:
-                        state.master_offline_count += 1
-                        if state.master_offline_count >= 3:
+                        state.server_status.master_offline_count += 1
+                        if state.server_status.master_offline_count >= 3:
                             self.state_manager.update_server_status(
                                 {
                                     "season": "---",
@@ -101,8 +106,8 @@ class BackgroundCoordinator:
                     self.state_manager.request_redraw()
 
             # Server status refresh (every 5 seconds)
-            if current_time - state.last_status_refresh_time > 5.0:
-                new_status = StatusManager.get_server_status()
+            if current_time - state.timing_state.last_status_refresh_time > 5.0:
+                new_status = self.status_manager.get_server_status()
                 shards = self.state_manager.get_shards_copy()
                 master = next((s for s in shards if s.name == "Master"), None)
                 if master and master.is_running:
@@ -114,41 +119,34 @@ class BackgroundCoordinator:
                 self.state_manager.request_redraw()
 
             # Status poll request (every 15 seconds)
-            if current_time - state.last_status_poll_time > 15.0:
-                if not state.ui_state.log_viewer_active and not state.is_working:
-                    StatusManager.request_status_update()
+            if current_time - state.timing_state.last_status_poll_time > 15.0:
+                if (
+                    not state.ui_state.viewer_state.log_viewer_active
+                    and not state.ui_state.is_working
+                ):
+                    self.status_manager.request_status_update()
                 self.state_manager.update_timing(last_status_poll_time=current_time)
 
-            # Chat logs refresh (every 5 seconds)
-            if current_time - state.last_chat_read_time > 5.0:
-                chat_logs = ChatManager.get_chat_logs(50)
-                if chat_logs:
-                    # Filter out duplicate messages using the seen_messages set
-                    new_messages = []
-                    for message in chat_logs:
-                        if message not in state.ui_state.seen_chat_messages:
-                            new_messages.append(message)
-                            state.ui_state.seen_chat_messages.add(message)
-
-                    # Update the chat logs with new messages only
-                    if new_messages:
-                        state.ui_state.cached_chat_logs.extend(new_messages)
-                        # Limit the total number of messages to prevent memory issues
-                        if len(state.ui_state.cached_chat_logs) > 200:
-                            # Remove oldest messages and their IDs from seen_messages
-                            oldest_messages = state.ui_state.cached_chat_logs[:-150]
-                            for msg in oldest_messages:
-                                state.ui_state.seen_chat_messages.discard(msg)
-                            state.ui_state.cached_chat_logs = (
-                                state.ui_state.cached_chat_logs[-150:]
+            # Chat logs refresh (every 0.2 seconds)
+            if current_time - state.timing_state.last_chat_read_time > 0.2:
+                log_path = ChatManager.get_chat_log_path()
+                if log_path and log_path.exists():
+                    try:
+                        stat = os.stat(log_path)
+                        if (stat.st_size != state.timing_state.last_chat_file_size or 
+                            stat.st_mtime != state.timing_state.last_chat_file_mtime):
+                            
+                            chat_logs = ChatManager.get_chat_logs(50)
+                            state.ui_state.cached_chat_logs = chat_logs
+                            self.event_bus.publish(Event(EventType.CHAT_MESSAGE, chat_logs))
+                            
+                            self.state_manager.update_timing(
+                                last_chat_file_size=stat.st_size,
+                                last_chat_file_mtime=stat.st_mtime
                             )
-
-                        discord_logger.info(
-                            f"Publishing {len(new_messages)} new chat messages from coordinator"
-                        )
-                        self.event_bus.publish(
-                            Event(EventType.CHAT_MESSAGE, new_messages)
-                        )
+                    except Exception: # pylint: disable=broad-exception-caught
+                        pass
+                
                 self.state_manager.update_timing(last_chat_read_time=current_time)
 
             time.sleep(0.1)

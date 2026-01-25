@@ -22,11 +22,14 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.ruff_cache
+.bandit
 
 # Virtual environments
 venv/
 env/
 ENV/
+.venv/
 
 # IDE
 .vscode/
@@ -38,8 +41,7 @@ ENV/
 # Logs
 *.log
 logs/
+log.txt
 
 # OS
-.DS_Store
 Thumbs.db
-key.env

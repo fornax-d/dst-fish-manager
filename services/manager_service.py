@@ -3,28 +3,23 @@
 
 """Main manager service that orchestrates all operations."""
 
-import os
-import subprocess
-from pathlib import Path
-from typing import List, Tuple, Dict
+from typing import Dict, List, Tuple
 
 from features.chat.chat_manager import ChatManager
-from features.status.status_manager import StatusManager
-from services.discord_service import DiscordService
-from services.systemd_service import SystemDService
 from features.shards.shard_manager import ShardManager
-from utils.config import Shard, HOME_DIR
+from features.status.status_manager import StatusManager
+from services.game_service import GameService
+from services.systemd_service import SystemDService
+from utils.config import Shard, write_cluster_token
 
 
 class ManagerService:
     """Orchestrates all interactions with systemd and game files."""
 
     def __init__(self):
+        self.game_service = GameService()
         self.systemd_service = SystemDService()
         self.shard_manager = ShardManager()
-
-        # Discord service (lazy initialization)
-        self._discord_service = None
 
     def get_shards(self) -> List[Shard]:
         """
@@ -64,42 +59,31 @@ class ManagerService:
 
     def run_updater(self):
         """Runs the dst-updater script."""
-        possible_paths = [
-            Path(__file__).parent.parent / ".local" / "bin" / "dst-updater",
-            HOME_DIR / ".local" / "bin" / "dst-updater",
-        ]
+        return self.game_service.run_updater()
 
-        updater_path = None
-        for p in possible_paths:
-            if p.is_file() and os.access(p, os.X_OK):
-                updater_path = p
-                break
-
-        if not updater_path:
-            raise FileNotFoundError(
-                f"Updater script not found in any of: {possible_paths}"
-            )
-
-        # nosemgrep: gitlab.security.b603
-        # Safe subprocess call: uses list argument, validated executable path, no shell=True
-        return subprocess.Popen(
-            [str(updater_path)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
+    def update_cluster_token(self, token: str) -> bool:
+        """Updates the cluster token."""
+        return write_cluster_token(token)
 
     def send_command(self, shard_name: str, command: str) -> Tuple[bool, str]:
         """Sends a command to the specified shard's console."""
-        return ChatManager.send_command(shard_name, command)
+        return self.game_service.send_command(shard_name, command)
 
     def send_chat_message(self, shard_name: str, message: str) -> Tuple[bool, str]:
         """Sends a chat message using c_announce() command."""
         return ChatManager.send_chat_message(shard_name, message)
 
-    def send_system_message(self, message: str) -> Tuple[bool, str]:
-        """Sends a chat message using TheNet:SystemMessage command."""
-        return ChatManager.send_system_message("Master", message)
+    def rollback_shard(self, shard_name: str, count: int = 1) -> Tuple[bool, str]:
+        """Rollbacks the shard."""
+        return self.game_service.rollback_shard(shard_name, count)
+
+    def save_shard(self, shard_name: str) -> Tuple[bool, str]:
+        """Saves the shard."""
+        return self.game_service.save_shard(shard_name)
+
+    def reset_shard(self, shard_name: str) -> Tuple[bool, str]:
+        """Resets the shard."""
+        return self.game_service.reset_shard(shard_name)
 
     def get_server_status(self, shard_name: str = "Master") -> Dict:
         """Gets server status information."""
@@ -108,20 +92,3 @@ class ManagerService:
     def request_status_update(self, shard_name: str = "Master") -> bool:
         """Requests status update from server."""
         return StatusManager.request_status_update(shard_name)
-
-    @property
-    def discord_service(self):
-        """Lazy initialization of Discord service."""
-        if self._discord_service is None:
-            self._discord_service = DiscordService(self)
-        return self._discord_service
-
-    def start_discord_bot(self):
-        """Start the Discord bot if enabled."""
-        if self.discord_service.is_enabled():
-            self.discord_service.start()
-
-    def stop_discord_bot(self):
-        """Stop the Discord bot."""
-        if self._discord_service:
-            self.discord_service.stop()

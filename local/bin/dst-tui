@@ -4,11 +4,11 @@
 set PYTHON_SCRIPT "$HOME/dst-fish-manager/main.py"
 
 if not test -f "$PYTHON_SCRIPT"
-    echo "Error: main.p not found in $HOME/dst-fish-manager/"
+    echo "Error: main.py not found in $HOME/dst-fish-manager/"
     exit 1
 end
 
-if not command -v python3 &> /dev/null
+if not command -v python3 &>/dev/null
     echo "Error: python3 not available"
     exit 1
 end

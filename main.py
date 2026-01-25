@@ -3,7 +3,6 @@
 
 """Entry point for the refactored DST Manager."""
 
-import curses
 import sys
 from pathlib import Path
 
@@ -11,22 +10,28 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-# Load environment variables from .env file
-from services.manager_service import ManagerService  # noqa: E402
-from ui.app import main  # noqa: E402
-from utils.env_loader import load_env_file  # noqa: E402
-
-load_env_file()
+# Import application main function (requires path to be set first)
+from ui.app import main  # noqa: E402,C0413  # pylint: disable=wrong-import-position
 
 if __name__ == "__main__":
-    # Initialize manager service
-    manager_service = ManagerService()
+    import curses
+    from utils.logger import setup_logging
+    from utils.config import load_env_keys
+
+    # Load Discord keys
+    load_env_keys()
+
+    # Setup logging
+    setup_logging()
 
     try:
-        # Run the TUI application
-        curses.wrapper(lambda stdscr: main(stdscr, manager_service))
+        curses.wrapper(main)
     except KeyboardInterrupt:
         pass
-    finally:
-        # Stop Discord bot on exit
-        manager_service.stop_discord_bot()
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        # Also catch exceptions that bubble up from curses wrapper
+        import logging
+
+        logging.critical("Fatal error", exc_info=True)
+        print(f"Fatal error occurred: {e}")
+        print("Check log.txt for details.")

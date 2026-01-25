@@ -4,28 +4,30 @@
 """Main TUI application."""
 
 import curses
-import subprocess
 import time
 
 from core.background.coordinator import BackgroundCoordinator
 from core.events.bus import Event, EventBus, EventType
-from core.state.app_state import StateManager
+from core.state.app_state import ServerStatus, StateManager
 from features.mods.mod_manager import ModManager
+from features.shards.shard_manager import ShardManager
 from services.manager_service import ManagerService
 from ui.input.handler import InputHandler
 from ui.rendering.renderer import Renderer
-from utils.logger import discord_logger
+from core.plugins.manager import PluginManager
 
 
-class TUIApp:
+class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-methods
     """Main TUI application class."""
 
-    def __init__(self, stdscr, manager_service=None):
+    def __init__(self, stdscr):
         self.stdscr = stdscr
         self.state_manager = StateManager()
         self.event_bus = EventBus()
-        self.manager_service = manager_service or ManagerService()
+        self.manager_service = ManagerService()
         self.mod_manager = ModManager()
+        self.shard_manager = ShardManager()
+        self.plugin_manager = PluginManager(self.manager_service, self.event_bus)
 
         # Setup UI components
         self.renderer = Renderer(stdscr, self.state_manager)
@@ -44,8 +46,15 @@ class TUIApp:
         # Link renderer to app for settings access
         self.renderer._app = self
 
+        # Start server status monitoring
+        self.status_manager = self.mod_manager.status_manager
+        self.status_manager.start_monitoring(update_interval=10)
+
         self.background_coordinator = BackgroundCoordinator(
-            self.state_manager, self.event_bus, self.manager_service
+            self.state_manager,
+            self.event_bus,
+            self.manager_service,
+            self.status_manager,
         )
 
         # Setup callbacks
@@ -59,6 +68,10 @@ class TUIApp:
 
         # Start background coordinator
         self.background_coordinator.start()
+
+        # Initialize and start plugins
+        self.plugin_manager.discover_plugins()
+        self.plugin_manager.start_all()
 
     def _setup_curses(self) -> None:
         """Setup curses settings."""
@@ -76,14 +89,19 @@ class TUIApp:
         self.input_handler.register_action_callback("prompt_chat", self._prompt_chat)
         self.input_handler.register_action_callback("open_mods", self._open_mods)
         self.input_handler.register_action_callback(
-            "open_discord_logs", self._open_discord_logs
+            "validate_mod", self._validate_selected_mod
+        )
+        self.input_handler.register_action_callback("fix_mod", self._fix_selected_mod)
+        self.input_handler.register_action_callback(
+            "show_stats", self._show_server_stats
         )
         self.input_handler.register_action_callback("resize", self._handle_resize)
         self.input_handler.register_action_callback("toggle_mod", self._toggle_mod)
         self.input_handler.register_action_callback("add_mod", self._prompt_add_mod)
-        self.input_handler.register_action_callback(
-            "toggle_discord", self._toggle_discord_bot
-        )
+
+    def _open_settings(self) -> None:
+        """Open settings popup."""
+        # This will be handled by the settings popup in input handler
 
     def _setup_event_subscriptions(self) -> None:
         """Setup event bus subscriptions."""
@@ -95,19 +113,7 @@ class TUIApp:
     def run(self) -> None:
         """Main application loop."""
         running = True
-
-        # Start Discord bot in background if enabled (after UI is created)
-        try:
-            if self.manager_service.discord_service.is_enabled():
-                # Connect event bus to Discord bot BEFORE starting it
-                self.manager_service.discord_service.set_event_bus(self.event_bus)
-                self.manager_service.start_discord_bot()
-            else:
-                # Log or handle the case where Discord is not enabled
-                pass
-        except AttributeError:
-            # Discord service not available or not properly initialized
-            pass
+        status_update_counter = 0
 
         # Initial shard loading
         self.background_coordinator.run_in_background(lambda: None)
@@ -121,32 +127,69 @@ class TUIApp:
                 running = False
                 continue
 
+            # Periodic status update for WORLD STATUS panel
+            status_update_counter += 1
+            if status_update_counter >= 50:  # Update every ~5 seconds
+                # Update server status
+                status_dict = self.status_manager.get_server_status()
+
+                self.state_manager.state.server_status = ServerStatus(
+                    season=status_dict.get("season", "Unknown"),
+                    day=status_dict.get("day", "Unknown"),
+                    days_left=status_dict.get("days_left", "Unknown"),
+                    phase=status_dict.get("phase", "Unknown"),
+                    players=status_dict.get("players", []),
+                    memory_usage=self.status_manager.get_memory_usage(),
+                )
+
+                # Update shards status
+                shards = self.shard_manager.get_shards()
+                self.state_manager.update_shards(shards)
+
+                status_update_counter = 0
+
             # Draw if needed (at most 30 FPS)
-            if state.need_redraw and (current_time - state.last_draw_time > 0.033):
+            if state.ui_state.need_redraw and (
+                current_time - state.timing_state.last_draw_time > 0.033
+            ):
                 self.renderer.render()
                 self.state_manager.clear_redraw_flag()
                 self.state_manager.update_timing(last_draw_time=current_time)
 
             # Small sleep to prevent 100% CPU
             time.sleep(0.01)
+            
+            # Update plugins
+            self.plugin_manager.update_all()
 
         # Cleanup
         self.background_coordinator.stop()
+        self.plugin_manager.stop_all()
 
     def _execute_action(self) -> None:
         """Execute the selected action."""
         state = self.state_manager.state
 
-        if state.is_working:
+        if state.ui_state.is_working:
             return
 
-        if state.ui_state.selected_global_action_idx != -1:
+        if state.ui_state.selection_state.selected_global_action_idx != -1:
             # Global action
-            actions = ["start", "stop", "enable", "disable", "restart", "update"]
-            action = actions[state.ui_state.selected_global_action_idx]
+            actions = [
+                "start",
+                "stop",
+                "enable",
+                "disable",
+                "restart",
+                "update",
+                "token",
+            ]
+            action = actions[state.ui_state.selection_state.selected_global_action_idx]
 
             if action == "update":
                 self._handle_update()
+            elif action == "token":
+                self._handle_token()
             else:
                 shards = self.state_manager.get_shards_copy()
                 self.background_coordinator.run_in_background(
@@ -158,29 +201,60 @@ class TUIApp:
             if not shards:
                 return
 
-            shard = shards[state.ui_state.selected_shard_idx]
-            actions = ["start", "stop", "restart", "logs"]
-            action = actions[state.ui_state.selected_action_idx]
+            shard = shards[state.ui_state.selection_state.selected_shard_idx]
+            actions = ["start", "stop", "restart", "actions", "logs"]
+            action = actions[state.ui_state.selection_state.selected_action_idx]
 
             if action == "logs":
                 self._handle_logs(shard.name)
+            elif action == "actions":
+                self._handle_shard_actions(shard.name)
             else:
                 self.background_coordinator.run_in_background(
                     self.manager_service.control_shard, shard.name, action
+                )
+
+    def _handle_shard_actions(self, shard_name: str) -> None:
+        """Handle shard advanced actions."""
+        options = ["Rollback (1 day)", "Force Save", "Regenerate World"]
+        selection = self.renderer.popup_manager.choice_popup("Shard Actions", options)
+
+        if selection is None:
+            return
+
+        if selection == 0:  # Rollback
+            self.background_coordinator.run_in_background(
+                self.manager_service.rollback_shard, shard_name, 1
+            )
+        elif selection == 1:  # Save
+            self.background_coordinator.run_in_background(
+                self.manager_service.save_shard, shard_name
+            )
+        elif selection == 2:  # Regenerate
+            # Confirm regeneration
+            confirm = self.renderer.popup_manager.choice_popup(
+                f"Regenerate {shard_name}?", ["No, cancel", "Yes, DESTROY and reset"]
+            )
+            if confirm == 1:
+                self.background_coordinator.run_in_background(
+                    self.manager_service.reset_shard, shard_name
                 )
 
     def _toggle_enable(self) -> None:
         """Toggle shard enable state."""
         state = self.state_manager.state
 
-        if state.is_working or state.ui_state.selected_global_action_idx != -1:
+        if (
+            state.ui_state.is_working
+            or state.ui_state.selection_state.selected_global_action_idx != -1
+        ):
             return
 
         shards = self.state_manager.get_shards_copy()
         if not shards:
             return
 
-        shard = shards[state.ui_state.selected_shard_idx]
+        shard = shards[state.ui_state.selection_state.selected_shard_idx]
         action = "disable" if shard.is_enabled else "enable"
         self.background_coordinator.run_in_background(
             self.manager_service.control_shard, shard.name, action
@@ -190,93 +264,26 @@ class TUIApp:
         """Prompt for chat message."""
         message = self.renderer.popup_manager.text_input_popup("Chat:", width=60)
         if message:
-            # Send message to game and publish event for Discord forwarding
-            success, _ = self.manager_service.send_chat_message("Master", message)
-            if success:
-                # Note: Chat messages are now handled by the coordinator
-                # which reads from the game chat log file.
-                # No need to publish separately from UI.
-                discord_logger.info(f"Chat message sent to game: {message}")
-            else:
+            success, _ = self.manager_service.send_chat_message("Master", f"[SSH God] {message}")
+            if not success:
                 # Could show error popup here
                 pass
 
     def _open_mods(self) -> None:
-        """Open mods viewer."""
-        mods = self.mod_manager.list_mods("Master")
+        """Open mods viewer with enhanced status."""
+        # Start auto-refresh for mods
+        self.mod_manager.start_auto_refresh(interval=30)
+
+        # Get mods with enhanced status
+        mods = self.mod_manager.list_mods_with_status("Master")
         self.state_manager.state.ui_state.mods = mods
-        self.state_manager.state.ui_state.mods_viewer_active = True
-        self.state_manager.state.ui_state.selected_mod_idx = 0
-
-    def _set_log_viewer(
-        self,
-        log_content: list,
-        is_discord: bool = False,
-        scroll_to_bottom: bool = False,
-    ) -> None:
-        """Set log viewer content and activate it.
-
-        Args:
-            log_content: List of log lines to display
-            is_discord: True if Discord logs, False for system logs
-            scroll_to_bottom: If True, scroll to show most recent logs
-        """
-        self.state_manager.state.ui_state.log_content = log_content
-        self.state_manager.state.ui_state.discord_logs_viewer_active = is_discord
-        self.state_manager.state.ui_state.log_viewer_active = not is_discord
-
-        if scroll_to_bottom:
-            self.state_manager.state.ui_state.log_scroll_pos = max(
-                0, len(log_content) - 20
-            )
-        else:
-            self.state_manager.state.ui_state.log_scroll_pos = 0
-
-    def _open_discord_logs(self) -> None:
-        """Open Discord bot logs viewer."""
-        try:
-            log_content = discord_logger.get_log_file_content(max_lines=500)
-        except (ImportError, AttributeError):
-            log_content = ["Discord logging not available"]
-
-        self._set_log_viewer(log_content, is_discord=True, scroll_to_bottom=True)
+        self.state_manager.state.ui_state.viewer_state.mods_viewer_active = True
+        self.state_manager.state.ui_state.selection_state.selected_mod_idx = 0
 
     def _handle_resize(self) -> None:
         """Handle terminal resize."""
         self.stdscr.clear()
         self.renderer.window_manager.create_layout()
-
-    def _toggle_discord_bot(self) -> None:
-        """Toggle Discord bot on/off via F10."""
-        try:
-            discord_service = self.manager_service.discord_service
-
-            if discord_service.is_running:
-                discord_service.stop()
-                self._set_log_viewer(
-                    ["--- Discord Bot Stopped ---"],
-                    is_discord=False,
-                    scroll_to_bottom=True,
-                )
-            else:
-                discord_service.start()
-                self._set_log_viewer(
-                    ["--- Discord Bot Started ---"],
-                    is_discord=False,
-                    scroll_to_bottom=True,
-                )
-        except AttributeError:
-            self._set_log_viewer(
-                ["--- Discord Service Not Available ---"],
-                is_discord=False,
-                scroll_to_bottom=True,
-            )
-        except (RuntimeError, OSError) as e:
-            self._set_log_viewer(
-                [f"--- Error Toggling Discord Bot: {e} ---"],
-                is_discord=False,
-                scroll_to_bottom=True,
-            )
 
     def _toggle_mod(self) -> None:
         """Toggle mod enabled state."""
@@ -284,7 +291,7 @@ class TUIApp:
         if not state.ui_state.mods:
             return
 
-        mod = state.ui_state.mods[state.ui_state.selected_mod_idx]
+        mod = state.ui_state.mods[state.ui_state.selection_state.selected_mod_idx]
         new_state = not mod["enabled"]
         if self.mod_manager.toggle_mod(mod["id"], new_state, "Master"):
             mod["enabled"] = new_state
@@ -301,84 +308,200 @@ class TUIApp:
 
             if self.mod_manager.add_mod(mod_id, "Master"):
                 # Refresh mods list
-                self.state_manager.state.ui_state.mods = self.mod_manager.list_mods(
-                    "Master"
+                self.state_manager.state.ui_state.mods = (
+                    self.mod_manager.list_mods_with_status("Master")
                 )
+
+    def _validate_selected_mod(self) -> None:
+        """Validate selected mod configuration."""
+        state = self.state_manager.state
+        if not state.ui_state.mods:
+            return
+
+        mod = state.ui_state.mods[state.ui_state.selection_state.selected_mod_idx]
+        validation = self.mod_manager.validate_mod_configuration(mod["id"], "Master")
+
+        # Show validation results in log
+        log_content = [f"=== Validation for {mod.get('name', mod['id'])} ==="]
+
+        if validation["valid"]:
+            log_content.append("✅ Configuration is valid")
+        else:
+            log_content.append("❌ Configuration has issues:")
+            for error in validation["errors"]:
+                log_content.append(f"   • {error}")
+
+        if validation["warnings"]:
+            log_content.append("⚠️ Warnings:")
+            for warning in validation["warnings"]:
+                log_content.append(f"   • {warning}")
+
+        if validation["suggestions"]:
+            log_content.append("💡 Suggestions:")
+            for suggestion in validation["suggestions"]:
+                log_content.append(f"   • {suggestion}")
+
+        self.state_manager.state.ui_state.viewer_state.log_content = log_content
+        self.state_manager.state.ui_state.viewer_state.log_viewer_active = True
+        self.state_manager.state.ui_state.viewer_state.log_scroll_pos = 0
+
+    def _fix_selected_mod(self) -> None:
+        """Fix common issues for selected mod."""
+        state = self.state_manager.state
+        if not state.ui_state.mods:
+            return
+
+        mod = state.ui_state.mods[state.ui_state.selection_state.selected_mod_idx]
+        fix_result = self.mod_manager.fix_common_mod_issues(mod["id"], "Master")
+
+        # Show fix results in log
+        log_content = [f"=== Fix attempt for {mod.get('name', mod['id'])} ==="]
+
+        if fix_result["success"]:
+            log_content.append("✅ Fixed successfully!")
+            if fix_result["fixed"]:
+                log_content.append("Fixed issues:")
+                for fix in fix_result["fixed"]:
+                    log_content.append(f"   • {fix}")
+        else:
+            log_content.append("❌ Some issues remain:")
+            for issue in fix_result["remaining_issues"]:
+                log_content.append(f"   • {issue}")
+
+        # Refresh mods list
+        self.state_manager.state.ui_state.mods = self.mod_manager.list_mods_with_status(
+            "Master"
+        )
+
+        self.state_manager.state.ui_state.viewer_state.log_content = log_content
+        self.state_manager.state.ui_state.viewer_state.log_viewer_active = True
+        self.state_manager.state.ui_state.viewer_state.log_scroll_pos = 0
+
+    def _show_server_stats(self) -> None:
+        """Show server and mod statistics."""
+        summary = self.mod_manager.get_server_stats_summary()
+
+        # Format server stats for display
+        mod_summary = summary["mod_summary"]
+        log_content = ["=== Mod Summary ==="]
+        log_content.append(f"📦 Total mods: {mod_summary['total_mods']}")
+        log_content.append(f"✅ Enabled: {mod_summary['enabled_mods']}")
+        log_content.append(f"🎮 Loaded in game: {mod_summary['loaded_mods']}")
+        log_content.append(f"❌ With errors: {mod_summary['mods_with_errors']}")
+
+        self.state_manager.state.ui_state.viewer_state.log_content = log_content
+        self.state_manager.state.ui_state.viewer_state.log_viewer_active = True
+        self.state_manager.state.ui_state.viewer_state.log_scroll_pos = 0
 
     def _handle_update(self) -> None:
         """Handle server update."""
-        self._set_log_viewer(["--- Starting Update ---"], is_discord=False)
+        self.state_manager.state.ui_state.viewer_state.log_content = [
+            "--- Starting Update ---"
+        ]
+        self.state_manager.state.ui_state.viewer_state.log_viewer_active = True
+        self.state_manager.state.ui_state.viewer_state.log_scroll_pos = 0
 
-        def update_worker():
-            try:
-                proc = self.manager_service.run_updater()
-                if proc.stdout:
-                    for line in proc.stdout:
-                        clean_line = line.strip()
-                        if clean_line:
-                            self.state_manager.state.ui_state.log_content.append(
-                                clean_line
-                            )
-                            # Auto-scroll to follow logs
-                            right_pane = self.renderer.window_manager.get_window(
-                                "right_pane"
-                            )
-                            if right_pane:
-                                lh, _ = right_pane.getmaxyx()
-                                if (
-                                    len(self.state_manager.state.ui_state.log_content)
-                                    > lh - 2
-                                ):
-                                    self.state_manager.state.ui_state.log_scroll_pos = (
-                                        len(
-                                            self.state_manager.state.ui_state.log_content
-                                        )
-                                        - (lh - 2)
-                                    )
-                proc.wait()
-                self.state_manager.state.ui_state.log_content.append(
-                    "--- Update Complete ---"
-                )
-            except (OSError, subprocess.SubprocessError) as e:
-                self.state_manager.state.ui_state.log_content.append(
-                    f"Error during update: {e}"
-                )
+        self.background_coordinator.run_in_background(self._perform_update_task)
 
-        self.background_coordinator.run_in_background(update_worker)
+    def _perform_update_task(self) -> None:
+        """Background task for performing update."""
+        try:
+            proc = self.manager_service.run_updater()
+            if proc.stdout:
+                for line in proc.stdout:
+                    self._process_update_line(line)
+
+            proc.wait()
+            self.state_manager.state.ui_state.viewer_state.log_content.append(
+                "--- Update Complete ---"
+            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.state_manager.state.ui_state.viewer_state.log_content.append(
+                f"Error during update: {e}"
+            )
+
+    def _handle_token(self) -> None:
+        """Handle cluster token update."""
+        token = self.renderer.popup_manager.text_input_popup(
+            "Enter Cluster Token", width=60
+        )
+        if token:
+            if self.manager_service.update_cluster_token(token):
+                # Show success message in log (or popup)
+                self.state_manager.state.ui_state.viewer_state.log_content = [
+                    "Checking server status...",
+                    "Cluster token updated successfully!",
+                ]
+                self.state_manager.state.ui_state.viewer_state.log_viewer_active = True
+                self.state_manager.state.ui_state.viewer_state.log_scroll_pos = 0
+            else:
+                self.state_manager.state.ui_state.viewer_state.log_content = [
+                    "Checking server status...",
+                    "Failed to update cluster token.",
+                ]
+                self.state_manager.state.ui_state.viewer_state.log_viewer_active = True
+                self.state_manager.state.ui_state.viewer_state.log_scroll_pos = 0
+
+    def _process_update_line(self, line: str) -> None:
+        """Process a single line of output from the updater."""
+        clean_line = line.strip()
+        if not clean_line:
+            return
+
+        self.state_manager.state.ui_state.viewer_state.log_content.append(clean_line)
+        # Auto-scroll to follow logs
+        right_pane = self.renderer.window_manager.get_window("right_pane")
+        if right_pane:
+            lh, _ = right_pane.getmaxyx()
+            if len(self.state_manager.state.ui_state.viewer_state.log_content) > lh - 2:
+                self.state_manager.state.ui_state.viewer_state.log_scroll_pos = len(
+                    self.state_manager.state.ui_state.viewer_state.log_content
+                ) - (lh - 2)
 
     def _handle_logs(self, shard_name: str) -> None:
         """Handle viewing logs."""
         log_content = self.manager_service.get_logs(shard_name, lines=200).split("\n")
-        self._set_log_viewer(log_content, is_discord=False)
+        self.state_manager.state.ui_state.viewer_state.log_content = log_content
+        self.state_manager.state.ui_state.viewer_state.log_viewer_active = True
+        self.state_manager.state.ui_state.viewer_state.log_scroll_pos = 0
 
     def _on_shard_refresh(self, _event: Event) -> None:
         """Handle shard refresh event."""
+        # Refresh shards from ShardManager and update state
+        shards = self.shard_manager.get_shards()
+        self.state_manager.update_shards(shards)
         self.state_manager.request_redraw()
 
     def _on_status_update(self, _event: Event) -> None:
         """Handle server status update event."""
+        # Update server status in state from StatusManager
+        status_dict = self.status_manager.get_server_status()
+
+        self.state_manager.state.server_status = ServerStatus(
+            season=status_dict.get("season", "Unknown"),
+            day=status_dict.get("day", "Unknown"),
+            days_left=status_dict.get("days_left", "Unknown"),
+            phase=status_dict.get("phase", "Unknown"),
+            players=status_dict.get("players", []),
+            memory_usage=self.status_manager.get_memory_usage(),
+        )
         self.state_manager.request_redraw()
 
-    def _on_chat_message(self, event: Event) -> None:
+    def _on_chat_message(self, _event: Event) -> None:
         """Handle chat message event."""
-        chat_logs = event.data
-        if chat_logs and isinstance(chat_logs, list):
-            # The coordinator already handles deduplication and adds new messages
-            # to state.ui_state.cached_chat_logs, so we don't need to add them again here
-            # Just request a redraw to show the updated chat logs
-            pass
         self.state_manager.request_redraw()
 
-    def _on_exit_requested(self, _event: Event) -> None:
+    def _on_exit_requested(self, event: Event) -> None:
         """Handle exit requested event."""
         # This will be handled in the main loop
-        pass  # noqa: W0107
 
 
-def main(stdscr, manager_service=None):
+def main(stdscr):
     """Main entry point."""
     try:
-        app = TUIApp(stdscr, manager_service)
+        app = TUIApp(stdscr)
         app.run()
-    except (KeyboardInterrupt, SystemExit):
-        pass
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        # Cleanup and show error
+        curses.endwin()
+        print(f"An error occurred: {e}")
