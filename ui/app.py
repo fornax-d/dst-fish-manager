@@ -14,6 +14,7 @@ from features.shards.shard_manager import ShardManager
 from services.manager_service import ManagerService
 from ui.input.handler import InputHandler
 from ui.rendering.renderer import Renderer
+from core.plugins.manager import PluginManager
 
 
 class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-methods
@@ -26,6 +27,7 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
         self.manager_service = ManagerService()
         self.mod_manager = ModManager()
         self.shard_manager = ShardManager()
+        self.plugin_manager = PluginManager(self.manager_service, self.event_bus)
 
         # Setup UI components
         self.renderer = Renderer(stdscr, self.state_manager)
@@ -66,6 +68,10 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
 
         # Start background coordinator
         self.background_coordinator.start()
+
+        # Initialize and start plugins
+        self.plugin_manager.discover_plugins()
+        self.plugin_manager.start_all()
 
     def _setup_curses(self) -> None:
         """Setup curses settings."""
@@ -152,9 +158,13 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
 
             # Small sleep to prevent 100% CPU
             time.sleep(0.01)
+            
+            # Update plugins
+            self.plugin_manager.update_all()
 
         # Cleanup
         self.background_coordinator.stop()
+        self.plugin_manager.stop_all()
 
     def _execute_action(self) -> None:
         """Execute the selected action."""
