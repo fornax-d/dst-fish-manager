@@ -1,68 +1,103 @@
 # -*- coding: utf-8 -*-
 """
-Isolated Discord Bot Process.
+Isolated fall.bot Process.
 This file is imported ONLY by the child process.
 """
+
 import asyncio
 import os
-import discord
-from discord import app_commands
 import queue
 import time
 
+import discord
+from discord import app_commands
+
 # Global reference for the client to access queues
 BOT_QUEUES = None
+
 
 class ControlPanel(discord.ui.View):
     def __init__(self, request_queue):
         super().__init__(timeout=None)
         self.request_queue = request_queue
 
-    @discord.ui.button(label="Start All", style=discord.ButtonStyle.success, emoji="🟢", custom_id="panel_start")
-    async def start_server(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="Start All",
+        style=discord.ButtonStyle.success,
+        emoji="🟢",
+        custom_id="panel_start",
+    )
+    async def start_server(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         await interaction.response.defer()
         # Simplified: We don't track interaction ID for completion on buttons for now
         # OR we could ephemeral reply "Command Sent"
-        self.request_queue.put(("CONTROL_SERVER", {
-            "action": "start", 
-            "shard": "All", 
-            "interaction_id": interaction.id
-        }))
+        self.request_queue.put(
+            (
+                "CONTROL_SERVER",
+                {"action": "start", "shard": "All", "interaction_id": interaction.id},
+            )
+        )
         await interaction.followup.send("Start command sent.", ephemeral=True)
 
-    @discord.ui.button(label="Stop All", style=discord.ButtonStyle.danger, emoji="🔴", custom_id="panel_stop")
-    async def stop_server(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="Stop All",
+        style=discord.ButtonStyle.danger,
+        emoji="🔴",
+        custom_id="panel_stop",
+    )
+    async def stop_server(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         await interaction.response.defer()
-        self.request_queue.put(("ANNOUNCE", {"message": "Server shutting down in 5 seconds..."}))
-        # Wait? No, we just send command. The manager handles the internal logic or we assume manager does it immediately.
+        self.request_queue.put(
+            ("ANNOUNCE", {"message": "Server shutting down in 5 seconds..."})
+        )
         # The referenced implementation did sleep in the thread. We can't easily sleep here without blocking?
         # Actually async sleep is fine.
-        await asyncio.sleep(5) 
-        self.request_queue.put(("CONTROL_SERVER", {
-            "action": "stop", 
-            "shard": "All", 
-            "interaction_id": interaction.id
-        }))
-        await interaction.followup.send("Stop command sent.", ephemeral=True)
-    
-    @discord.ui.button(label="Restart All", style=discord.ButtonStyle.primary, emoji="🔄", custom_id="panel_restart")
-    async def restart_server(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        self.request_queue.put(("ANNOUNCE", {"message": "Server restarting in 5 seconds..."}))
         await asyncio.sleep(5)
-        self.request_queue.put(("CONTROL_SERVER", {
-            "action": "restart", 
-            "shard": "All", 
-            "interaction_id": interaction.id
-        }))
-        await interaction.followup.send("Restart command sent.", ephemeral=True)
-        
-    @discord.ui.button(label="Update Server", style=discord.ButtonStyle.secondary, emoji="⬇️", custom_id="panel_update")
-    async def update_server(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.request_queue.put(
+            (
+                "CONTROL_SERVER",
+                {"action": "stop", "shard": "All", "interaction_id": interaction.id},
+            )
+        )
+        await interaction.followup.send("Stop command sent.", ephemeral=True)
+
+    @discord.ui.button(
+        label="Restart All",
+        style=discord.ButtonStyle.primary,
+        emoji="🔄",
+        custom_id="panel_restart",
+    )
+    async def restart_server(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         await interaction.response.defer()
-        self.request_queue.put(("UPDATE_SERVER", {
-            "interaction_id": interaction.id
-        }))
+        self.request_queue.put(
+            ("ANNOUNCE", {"message": "Server restarting in 5 seconds..."})
+        )
+        await asyncio.sleep(5)
+        self.request_queue.put(
+            (
+                "CONTROL_SERVER",
+                {"action": "restart", "shard": "All", "interaction_id": interaction.id},
+            )
+        )
+        await interaction.followup.send("Restart command sent.", ephemeral=True)
+
+    @discord.ui.button(
+        label="Update Server",
+        style=discord.ButtonStyle.secondary,
+        emoji="⬇️",
+        custom_id="panel_update",
+    )
+    async def update_server(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        await interaction.response.defer()
+        self.request_queue.put(("UPDATE_SERVER", {"interaction_id": interaction.id}))
         await interaction.followup.send("Update command sent.", ephemeral=True)
 
 
@@ -74,7 +109,7 @@ class FishBotClient(discord.Client):
         self.log_queue = log_queue
         self.tree = app_commands.CommandTree(self)
         self.chat_channel_id = os.getenv("DISCORD_CHAT_CHANNEL_ID")
-        
+
         # Dictionary to store pending interactions to reply to later
         # Key: interaction_id, Value: Interaction Object
         self.pending_interactions = {}
@@ -112,7 +147,7 @@ class FishBotClient(discord.Client):
                 # Non-blocking get
                 while not self.command_queue.empty():
                     cmd_type, data = self.command_queue.get_nowait()
-                    
+
                     if cmd_type == "STOP":
                         self.log("Received STOP command. Closing bot.")
                         await self.close()
@@ -124,17 +159,19 @@ class FishBotClient(discord.Client):
                         if iid in self.pending_interactions:
                             interaction = self.pending_interactions.pop(iid)
                             shards = data.get("shards", [])
-                            
+
                             # Build embed or message
                             msg = "**Server Status:**\n"
                             for s in shards:
-                                icon = "🟢" if s['is_running'] else "🔴"
+                                icon = "🟢" if s["is_running"] else "🔴"
                                 msg += f"{icon} **{s['name']}**: {s['status']}\n"
-                            
+
                             try:
                                 await interaction.followup.send(msg)
                             except Exception as e:
-                                self.log(f"Failed to send status followup: {e}", "ERROR")
+                                self.log(
+                                    f"Failed to send status followup: {e}", "ERROR"
+                                )
 
                     elif cmd_type == "CONTROL_RESPONSE":
                         # data = {"interaction_id": ..., "success": bool, "output": str}
@@ -143,17 +180,19 @@ class FishBotClient(discord.Client):
                             interaction = self.pending_interactions.pop(iid)
                             success = data.get("success")
                             output = data.get("output", "")
-                            
+
                             icon = "✅" if success else "❌"
                             try:
-                                await interaction.followup.send(f"{icon} Result: {output}")
+                                await interaction.followup.send(
+                                    f"{icon} Result: {output}"
+                                )
                             except:
                                 pass
-                                
+
                     elif cmd_type == "UPDATE_RESPONSE":
-                         # data = {"interaction_id": ..., "success": ..., "output": ...}
-                         # We might want to notify channel?
-                         pass
+                        # data = {"interaction_id": ..., "success": ..., "output": ...}
+                        # We might want to notify channel?
+                        pass
 
                     elif cmd_type == "PLAYERS_RESPONSE":
                         # data = {"interaction_id": ..., "players": [...]}
@@ -161,12 +200,14 @@ class FishBotClient(discord.Client):
                         if iid in self.pending_interactions:
                             interaction = self.pending_interactions.pop(iid)
                             players = data.get("players", [])
-                            
+
                             if players:
-                                msg = "**Online Players:**\n" + "\n".join([f"• {p}" for p in players])
+                                msg = "**Online Players:**\n" + "\n".join(
+                                    [f"• {p}" for p in players]
+                                )
                             else:
                                 msg = "No players online."
-                            
+
                             try:
                                 await interaction.followup.send(msg)
                             except:
@@ -181,7 +222,7 @@ class FishBotClient(discord.Client):
                                     await channel.send(data)
                             except Exception as e:
                                 self.log(f"Failed to send chat: {e}", "ERROR")
-                
+
                 await asyncio.sleep(0.5)
             except Exception as e:
                 self.log(f"Error in queue listener: {e}", "ERROR")
@@ -190,10 +231,10 @@ class FishBotClient(discord.Client):
 
 def run_bot_process(token, command_queue, request_queue, log_queue):
     """Entry point for the separate process."""
-    
+
     # Setup intents
     intents = discord.Intents.default()
-    intents.message_content = True # If we want to read chat
+    intents.message_content = True  # If we want to read chat
 
     client = FishBotClient(command_queue, request_queue, log_queue, intents=intents)
 
@@ -211,23 +252,25 @@ def run_bot_process(token, command_queue, request_queue, log_queue):
     async def start_server(interaction: discord.Interaction, shard: str = "Master"):
         await interaction.response.defer()
         client.pending_interactions[interaction.id] = interaction
-        request_queue.put(("CONTROL_SERVER", {
-            "action": "start", 
-            "shard": shard, 
-            "interaction_id": interaction.id
-        }))
+        request_queue.put(
+            (
+                "CONTROL_SERVER",
+                {"action": "start", "shard": shard, "interaction_id": interaction.id},
+            )
+        )
 
     @client.tree.command(name="stop", description="Stop a shard (or all)")
     @app_commands.describe(shard="Shard name or 'All'")
     async def stop_server(interaction: discord.Interaction, shard: str = "Master"):
         await interaction.response.defer()
         client.pending_interactions[interaction.id] = interaction
-        request_queue.put(("CONTROL_SERVER", {
-            "action": "stop", 
-            "shard": shard, 
-            "interaction_id": interaction.id
-        }))
-        
+        request_queue.put(
+            (
+                "CONTROL_SERVER",
+                {"action": "stop", "shard": shard, "interaction_id": interaction.id},
+            )
+        )
+
     @client.tree.command(name="announce", description="Send Message to Server")
     async def announce(interaction: discord.Interaction, message: str):
         request_queue.put(("ANNOUNCE", {"message": message}))
@@ -241,7 +284,9 @@ def run_bot_process(token, command_queue, request_queue, log_queue):
 
     @client.tree.command(name="panel", description="Show Server Control Panel")
     async def panel(interaction: discord.Interaction):
-        await interaction.response.send_message("Server Controls:", view=ControlPanel(request_queue))
+        await interaction.response.send_message(
+            "Server Controls:", view=ControlPanel(request_queue)
+        )
 
     # --- RUN ---
     try:

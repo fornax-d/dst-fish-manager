@@ -1,32 +1,37 @@
 # -*- coding: utf-8 -*-
 """
-Discord Bot Plugin.
+fall.bot plugin.
 """
-import multiprocessing
-import queue
+
 import logging
-from core.plugins.interface import IPlugin
+import multiprocessing
+import os
+import queue
+
 # from .bot_process import run_bot_process
 # Since we load this plugin dynamically from file, relative imports are tricky.
 # We add the current directory to sys.path temporarily.
 import sys
-import os
+
+from core.plugins.interface import IPlugin
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
 try:
-    from bot_process import run_bot_process
+    from fallbot_process import run_bot_process
 finally:
     # Optional: remove from path if we want to be clean, but usually fine to keep for sub-imports
     pass
 
 logger = logging.getLogger(__name__)
 
+
 class DiscordBotPlugin(IPlugin):
     def __init__(self):
         super().__init__()
-        self.name = "Fall Bot Integration"
+        self.name = "fall.bot Integration"
         self.version = "1.0.0"
         self.process = None
         self.command_queue = None
@@ -44,6 +49,7 @@ class DiscordBotPlugin(IPlugin):
 
     def on_start(self):
         import os
+
         token = os.getenv("DISCORD_BOT_TOKEN")
         if not token:
             logger.warning("DISCORD_BOT_TOKEN not set, skipping Discord Bot start.")
@@ -57,21 +63,25 @@ class DiscordBotPlugin(IPlugin):
             target=run_bot_process,
             args=(token, self.command_queue, self.request_queue, self.log_queue),
             name="DiscordBotProcess",
-            daemon=True
+            daemon=True,
         )
         self.process.start()
-        
+
         # Subscribe to chat events
         if self.event_bus:
             from core.events.bus import EventType
-            self.chat_sub_id = self.event_bus.subscribe(EventType.CHAT_MESSAGE, self._on_chat_event)
-            
+
+            self.chat_sub_id = self.event_bus.subscribe(
+                EventType.CHAT_MESSAGE, self._on_chat_event
+            )
+
         logger.info(f"Discord Bot process started with PID {self.process.pid}")
 
     def on_stop(self):
         # Unsubscribe
         if self.event_bus and self.chat_sub_id:
             from core.events.bus import EventType
+
             self.event_bus.unsubscribe(EventType.CHAT_MESSAGE, self.chat_sub_id)
 
         if self.process and self.process.is_alive():
@@ -95,7 +105,7 @@ class DiscordBotPlugin(IPlugin):
                 # we might need to forward these.
                 # But for simplicity, we let the logger handle it if configured, or just ignore for now
                 # to avoid duplicate logs in stdout if both print.
-                # ACTUALLY: The TUI captures stdout/stderr/logging. 
+                # ACTUALLY: The TUI captures stdout/stderr/logging.
                 # We should probably log them to the main logger with a prefix.
                 level, msg = record
                 if level == "INFO":
@@ -123,35 +133,38 @@ class DiscordBotPlugin(IPlugin):
             # But the bot might wait for a response?
             # Creating a synchronous 'ask' across processes is complex.
             # Simplified flow: Bot asks for status -> App sends 'UPDATE_STATUS' command back with data.
-            
+
             # However, for 'GET_STATUS', the bot usually needs it *now* to reply to interaction.
             # If we want to be fully async, the bot defers interaction, asks us, we process, we send back.
             # For this MVP, let's implement the 'Defer -> Ask -> Reply' flow in the bot.
-            
+
             # Wait, the ManagerService has access to shm/systemd which is fast.
             # BUT we are in the main loop update() here.
-            
+
             # Let's get the status
             shards = self.manager.get_shards()
             status_data = []
             for s in shards:
-                status_data.append({
-                    "name": s.name,
-                    "is_running": s.is_running,
-                    "status": s.status
-                })
-            
+                status_data.append(
+                    {"name": s.name, "is_running": s.is_running, "status": s.status}
+                )
+
             # Send back to bot
-            self.command_queue.put(("STATUS_RESPONSE", {
-                "interaction_id": data.get("interaction_id"),
-                "shards": status_data
-            }))
+            self.command_queue.put(
+                (
+                    "STATUS_RESPONSE",
+                    {
+                        "interaction_id": data.get("interaction_id"),
+                        "shards": status_data,
+                    },
+                )
+            )
 
         elif req_type == "CONTROL_SERVER":
             # data = {"action": "start", "shard": "Master", "interaction_id": ...}
             action = data.get("action")
             shard_name = data.get("shard")
-            
+
             # Look up shard
             target_shards = []
             if shard_name == "All" or not shard_name:
@@ -163,47 +176,68 @@ class DiscordBotPlugin(IPlugin):
                     if s.name == shard_name:
                         target_shards.append(s)
                         break
-            
+
             # Execute
             # This returns (success, stdout, stderr)
             # control_all_shards or control_shard
             if len(target_shards) > 1:
-                success, out, err = self.manager.control_all_shards(action, target_shards)
+                success, out, err = self.manager.control_all_shards(
+                    action, target_shards
+                )
             elif len(target_shards) == 1:
-                success, out, err = self.manager.control_shard(target_shards[0].name, action)
+                success, out, err = self.manager.control_shard(
+                    target_shards[0].name, action
+                )
             else:
                 success, out, err = False, "", "Shard not found"
 
             # Reply
-            self.command_queue.put(("CONTROL_RESPONSE", {
-                "interaction_id": data.get("interaction_id"),
-                "success": success,
-                "output": err if not success else "Command sent." # TUI usually doesn't wait for full boot
-            }))
+            self.command_queue.put(
+                (
+                    "CONTROL_RESPONSE",
+                    {
+                        "interaction_id": data.get("interaction_id"),
+                        "success": success,
+                        "output": err
+                        if not success
+                        else "Command sent.",  # TUI usually doesn't wait for full boot
+                    },
+                )
+            )
 
         elif req_type == "UPDATE_SERVER":
-             # Execute update
-             # run_updater returns Popen object?
-             # manager_service.py says: return self.game_service.run_updater()
-             # We should probably run this in background or just kick it off.
-             # The TUI handles update logs via `_perform_update_task`.
-             # Here we just kick it off.
-             
-             try:
-                 proc = self.manager.run_updater()
-                 # We can't easily capture output here without blocking or complex thread handling.
-                 # Let's just say it started.
-                 self.command_queue.put(("CONTROL_RESPONSE", {
-                    "interaction_id": data.get("interaction_id"),
-                    "success": True,
-                    "output": "Update started. Check server logs."
-                 }))
-             except Exception as e:
-                 self.command_queue.put(("CONTROL_RESPONSE", {
-                    "interaction_id": data.get("interaction_id"),
-                    "success": False,
-                    "output": f"Failed to start update: {e}"
-                 }))
+            # Execute update
+            # run_updater returns Popen object?
+            # manager_service.py says: return self.game_service.run_updater()
+            # We should probably run this in background or just kick it off.
+            # The TUI handles update logs via `_perform_update_task`.
+            # Here we just kick it off.
+
+            try:
+                proc = self.manager.run_updater()
+                # We can't easily capture output here without blocking or complex thread handling.
+                # Let's just say it started.
+                self.command_queue.put(
+                    (
+                        "CONTROL_RESPONSE",
+                        {
+                            "interaction_id": data.get("interaction_id"),
+                            "success": True,
+                            "output": "Update started. Check server logs.",
+                        },
+                    )
+                )
+            except Exception as e:
+                self.command_queue.put(
+                    (
+                        "CONTROL_RESPONSE",
+                        {
+                            "interaction_id": data.get("interaction_id"),
+                            "success": False,
+                            "output": f"Failed to start update: {e}",
+                        },
+                    )
+                )
 
         elif req_type == "GET_PLAYERS":
             # Force update first?
@@ -211,26 +245,28 @@ class DiscordBotPlugin(IPlugin):
             status = self.manager.get_server_status("Master")
             # {"players": ["Name", ...], ...}
             players = status.get("players", [])
-            
-            self.command_queue.put(("PLAYERS_RESPONSE", {
-                "interaction_id": data.get("interaction_id"),
-                "players": players
-            }))
+
+            self.command_queue.put(
+                (
+                    "PLAYERS_RESPONSE",
+                    {"interaction_id": data.get("interaction_id"), "players": players},
+                )
+            )
 
         elif req_type == "ANNOUNCE":
-             # data = {"message": "...", "shard": "Master"}
-             msg = data.get("message")
-             shard = data.get("shard", "Master")
-             self.manager.send_chat_message(shard, f"[Discord/App] {msg}")
+            # data = {"message": "...", "shard": "Master"}
+            msg = data.get("message")
+            shard = data.get("shard", "Master")
+            self.manager.send_chat_message(shard, f"[Discord/App] {msg}")
 
     def _on_chat_event(self, event):
         """Handle chat message from the game."""
         if not self.command_queue:
             return
-            
+
         # event.data is likely a list of recent messages or a single new message?
         # Based on previous code: event.data is list of all recent lines.
-        # We need to filter for new lines. 
+        # We need to filter for new lines.
         # Actually, let's look at `ui/app.py` or where the event is emitted.
         # `manager_service.get_chat_logs` returns list of str.
         # The previous bot manager kept 'previous_chat_messages' to find diffs.
@@ -238,44 +274,46 @@ class DiscordBotPlugin(IPlugin):
         # Let's check `_on_chat_message` in app.py. It just `request_redraw()`.
         # So the event might NOT contain the data, or it might contain the full log.
         # If it contains full log, we need a history tracking here.
-        
+
         # Checking `core/background/coordinator.py` would confirm what is sent.
         # Assuming for now event.data is the list of logs.
-        
+
         # Simplification: We need state to track what we already sent.
-        # We can store `last_log_line` or similar. 
-        
-        pass # To be implemented fully, we need to handle the log diffing properly.
+        # We can store `last_log_line` or similar.
+
+        pass  # To be implemented fully, we need to handle the log diffing properly.
         # For now, let's assume we receive the full list and we need to simple diff.
-        
+
         chat_logs = event.data
         if not chat_logs or not isinstance(chat_logs, list):
-             return
-             
+            return
+
         # Simple diffing (naive)
         # We need `self.last_chat_logs`
         if not hasattr(self, "last_chat_logs"):
-             self.last_chat_logs = []
-             
+            self.last_chat_logs = []
+
         new_msgs = []
         for msg in chat_logs:
             if msg not in self.last_chat_logs:
-                 # Check filters
-                 if "[Discord]" in msg: continue
-                 if " [System Message]" in msg: continue
-                 if " [Whisper]" in msg: continue
-                 # Extract user?
-                 # Format usually: "[00:00:00] : [Say] User: Message"
-                 if "[Say]" in msg:
-                      # Clean it up for discord
-                      # e.g. remove timestamp
-                      # This is a bit brittle without regex, but let's try basic
-                      # "[00:00:00] : [Say] " length is 20 chars
-                      content = msg[20:] if len(msg) > 20 else msg
-                      new_msgs.append(content)
-        
-        self.last_chat_logs = chat_logs[-100:] # Keep last 100
-        
+                # Check filters
+                if "[Discord]" in msg:
+                    continue
+                if " [System Message]" in msg:
+                    continue
+                if " [Whisper]" in msg:
+                    continue
+                # Extract user?
+                # Format usually: "[00:00:00] : [Say] User: Message"
+                if "[Say]" in msg:
+                    # Clean it up for discord
+                    # e.g. remove timestamp
+                    # This is a bit brittle without regex, but let's try basic
+                    # "[00:00:00] : [Say] " length is 20 chars
+                    content = msg[20:] if len(msg) > 20 else msg
+                    new_msgs.append(content)
+
+        self.last_chat_logs = chat_logs[-100:]  # Keep last 100
+
         for m in new_msgs:
             self.command_queue.put(("SEND_CHAT", m))
-

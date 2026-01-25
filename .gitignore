@@ -41,6 +41,7 @@ ENV/
 # Logs
 *.log
 logs/
+log.txt
 
 # OS
 Thumbs.db
