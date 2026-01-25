@@ -9,17 +9,25 @@ from typing import Callable
 
 from core.events.bus import Event, EventBus, EventType
 from core.state.app_state import StateManager
+from features.chat.chat_manager import ChatManager
+from features.shards.shard_manager import ShardManager
+from features.status.status_manager import StatusManager
 
 
 class BackgroundCoordinator:
     """Coordinates background tasks and periodic updates."""
 
     def __init__(
-        self, state_manager: StateManager, event_bus: EventBus, manager_service
+        self,
+        state_manager: StateManager,
+        event_bus: EventBus,
+        manager_service,
+        status_manager: StatusManager,
     ):
         self.state_manager = state_manager
         self.event_bus = event_bus
         self.manager_service = manager_service
+        self.status_manager = status_manager
         self._running = False
         self._background_thread = None
 
@@ -49,8 +57,6 @@ class BackgroundCoordinator:
             try:
                 func(*args, **kwargs)
                 # Refresh shards after task completes
-                from features.shards.shard_manager import ShardManager
-
                 shard_manager = ShardManager()
                 new_shards = shard_manager.get_shards()
                 self.state_manager.update_shards(new_shards)
@@ -68,13 +74,11 @@ class BackgroundCoordinator:
             state = self.state_manager.state
 
             # Periodic shard refresh (every 2 seconds)
-            if current_time - state.last_refresh_time > 2.0:
+            if current_time - state.timing_state.last_refresh_time > 2.0:
                 if (
-                    not state.ui_state.log_viewer_active
-                    and not state.ui_state.mods_viewer_active
+                    not state.ui_state.viewer_state.log_viewer_active
+                    and not state.ui_state.viewer_state.mods_viewer_active
                 ):
-                    from features.shards.shard_manager import ShardManager
-
                     shard_manager = ShardManager()
                     new_shards = shard_manager.get_shards()
                     self.state_manager.update_shards(new_shards)
@@ -82,10 +86,10 @@ class BackgroundCoordinator:
                     # Check master offline status
                     master = next((s for s in new_shards if s.name == "Master"), None)
                     if master and master.is_running:
-                        state.master_offline_count = 0
+                        state.server_status.master_offline_count = 0
                     else:
-                        state.master_offline_count += 1
-                        if state.master_offline_count >= 3:
+                        state.server_status.master_offline_count += 1
+                        if state.server_status.master_offline_count >= 3:
                             self.state_manager.update_server_status(
                                 {
                                     "season": "---",
@@ -101,10 +105,8 @@ class BackgroundCoordinator:
                     self.state_manager.request_redraw()
 
             # Server status refresh (every 5 seconds)
-            if current_time - state.last_status_refresh_time > 5.0:
-                from features.status.status_manager import StatusManager
-
-                new_status = StatusManager.get_server_status()
+            if current_time - state.timing_state.last_status_refresh_time > 5.0:
+                new_status = self.status_manager.get_server_status()
                 shards = self.state_manager.get_shards_copy()
                 master = next((s for s in shards if s.name == "Master"), None)
                 if master and master.is_running:
@@ -116,17 +118,16 @@ class BackgroundCoordinator:
                 self.state_manager.request_redraw()
 
             # Status poll request (every 15 seconds)
-            if current_time - state.last_status_poll_time > 15.0:
-                if not state.ui_state.log_viewer_active and not state.is_working:
-                    from features.status.status_manager import StatusManager
-
-                    StatusManager.request_status_update()
+            if current_time - state.timing_state.last_status_poll_time > 15.0:
+                if (
+                    not state.ui_state.viewer_state.log_viewer_active
+                    and not state.ui_state.is_working
+                ):
+                    self.status_manager.request_status_update()
                 self.state_manager.update_timing(last_status_poll_time=current_time)
 
             # Chat logs refresh (every 5 seconds)
-            if current_time - state.last_chat_read_time > 5.0:
-                from features.chat.chat_manager import ChatManager
-
+            if current_time - state.timing_state.last_chat_read_time > 5.0:
                 chat_logs = ChatManager.get_chat_logs(50)
                 state.ui_state.cached_chat_logs = chat_logs
                 self.event_bus.publish(Event(EventType.CHAT_MESSAGE, chat_logs))

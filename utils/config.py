@@ -4,6 +4,7 @@
 """Configuration management with cluster and branch switching."""
 
 import os
+import sys
 import re
 from functools import lru_cache
 from pathlib import Path
@@ -101,9 +102,7 @@ class ConfigManager:
 
             self._config_cache = config
             return True
-        except Exception as e:
-            import sys
-
+        except (IOError, ValueError) as e:
             print(f"Error writing config: {e}", file=sys.stderr)
             return False
 
@@ -148,18 +147,30 @@ class ConfigManager:
 
         # Then check numeric ID subdirectories (client clusters - usually ignore for servers)
         if not clusters:  # Only check client clusters if no server clusters found
-            for item in dst_dir.iterdir():
-                if item.is_dir() and item.name.isdigit():
-                    for subitem in item.iterdir():
-                        if subitem.is_dir() and (subitem / "cluster.ini").exists():
-                            master_path = subitem / "Master"
-                            if (
-                                master_path.exists()
-                                and (master_path / "server.ini").exists()
-                            ):
-                                clusters.append(subitem.name)
+            clusters.extend(self._scan_client_clusters(dst_dir))
 
         return sorted(set(clusters))
+
+    def _scan_client_clusters(self, dst_dir: Path) -> List[str]:
+        """Scan for client-hosted clusters."""
+        clusters = []
+        for item in dst_dir.iterdir():
+            if not item.is_dir() or not item.name.isdigit():
+                continue
+
+            for subitem in item.iterdir():
+                if subitem.is_dir():
+                    if self._is_valid_cluster(subitem):
+                        clusters.append(subitem.name)
+        return clusters
+
+    def _is_valid_cluster(self, path: Path) -> bool:
+        """Check if path is a valid cluster directory."""
+        return (
+            (path / "cluster.ini").exists()
+            and (path / "Master").exists()
+            and (path / "Master" / "server.ini").exists()
+        )
 
     def auto_detect_cluster(self) -> str:
         """Auto-detect first available cluster with proper shard structure."""

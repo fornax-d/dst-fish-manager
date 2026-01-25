@@ -57,9 +57,11 @@ class ModConfigManager:
 
             return options
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Broad exception catch is intentional here - we want to handle
+            # any errors during mod config parsing gracefully
             self.logger.error(
-                f"Error parsing mod config options for {workshop_id}: {e}"
+                "Error parsing mod config options for %s: %s", workshop_id, e
             )
             return []
 
@@ -107,11 +109,13 @@ class ModConfigManager:
 
             return option
 
-        except Exception as e:
-            self.logger.error(f"Error parsing option: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Broad exception catch is intentional here - we want to handle
+            # any errors during option parsing gracefully
+            self.logger.error("Error parsing option: %s", e)
             return None
 
-    def _parse_option_choices(self, options_text: str) -> List[Dict]:
+    def _parse_option_choices(self, options_text: str) -> List[Dict]:  # noqa: R0914
         """Parse choices for dropdown/multi-select options."""
         choices = []
 
@@ -130,6 +134,37 @@ class ModConfigManager:
             choices.append(choice)
 
         return choices
+
+    def _parse_config_value(self, value_str: str) -> any:
+        """Parse configuration value string into appropriate type."""
+        value_str = value_str.strip()
+        if value_str.startswith('"') and value_str.endswith('"'):
+            return value_str[1:-1]
+
+        lower_val = value_str.lower()
+        if lower_val == "true":
+            return True
+        if lower_val == "false":
+            return False
+
+        try:
+            if "." in value_str:
+                return float(value_str)
+            return int(value_str)
+        except ValueError:
+            return value_str
+
+    def _parse_config_text_to_dict(self, config_text: str) -> Dict:
+        """Parse configuration text into a dictionary."""
+        config = {}
+        pair_pattern = r"(\w+)\s*=\s*([^,}]+)"
+
+        for pair_match in re.finditer(pair_pattern, config_text):
+            key = pair_match.group(1)
+            value_str = pair_match.group(2)
+            config[key] = self._parse_config_value(value_str)
+
+        return config
 
     def get_current_mod_config(
         self, workshop_id: str, shard_name: str = "Master"
@@ -162,33 +197,13 @@ class ModConfigManager:
 
             config_text = config_options_match.group(1)
 
-            # Parse key-value pairs
-            config = {}
-            pair_pattern = r"(\w+)\s*=\s*([^,}]+)"
+            return self._parse_config_text_to_dict(config_text)
 
-            for pair_match in re.finditer(pair_pattern, config_text):
-                key = pair_match.group(1)
-                value_str = pair_match.group(2).strip()
-
-                # Parse value type
-                if value_str.startswith('"') and value_str.endswith('"'):
-                    config[key] = value_str[1:-1]  # String
-                elif value_str.lower() in ["true", "false"]:
-                    config[key] = value_str.lower() == "true"  # Boolean
-                else:
-                    try:
-                        if "." in value_str:
-                            config[key] = float(value_str)  # Float
-                        else:
-                            config[key] = int(value_str)  # Integer
-                    except ValueError:
-                        config[key] = value_str  # Fallback to string
-
-            return config
-
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Broad exception catch is intentional here - we want to handle
+            # any errors during mod config reading gracefully
             self.logger.error(
-                f"Error reading current mod config for {workshop_id}: {e}"
+                "Error reading current mod config for %s: %s", workshop_id, e
             )
             return {}
 
@@ -241,8 +256,10 @@ class ModConfigManager:
             modoverrides_path.write_text(new_content)
             return True
 
-        except Exception as e:
-            self.logger.error(f"Error updating mod config for {workshop_id}: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Broad exception catch is intentional here - we want to handle
+            # any errors during mod config updating gracefully
+            self.logger.error("Error updating mod config for %s: %s", workshop_id, e)
             return False
 
     def _dict_to_lua_config(self, config: Dict) -> str:
@@ -258,7 +275,6 @@ class ModConfigManager:
                 config_parts.append(f"                    {key}={str(value).lower()}")
             elif isinstance(value, (int, float)):
                 config_parts.append(f"                    {key}={value}")
-            else:
                 config_parts.append(f'                    {key}="{str(value)}"')
 
         return ",\n".join(config_parts)
@@ -266,11 +282,13 @@ class ModConfigManager:
     def _create_mod_entry(self, workshop_id: str, config_str: str) -> str:
         """Create a complete mod entry for modoverrides.lua."""
         if config_str.strip():
-            return f'  ["{workshop_id}"]={{ configuration_options={{\n{config_str}\n                  }}, enabled=true }}'
-        else:
             return (
-                f'  ["{workshop_id}"]={{ configuration_options={{  }}, enabled=true }}'
+                f'  ["{workshop_id}"]={{ configuration_options={{\n'
+                f"{config_str}\n"
+                f"                  }}, enabled=true }}"
             )
+
+        return f'  ["{workshop_id}"]={{ configuration_options={{  }}, enabled=true }}'
 
     def reset_mod_to_default(
         self, workshop_id: str, shard_name: str = "Master"
@@ -288,8 +306,8 @@ class ModConfigManager:
             # Update with defaults
             return self.update_mod_config(workshop_id, defaults, shard_name)
 
-        except Exception as e:
-            self.logger.error(f"Error resetting mod {workshop_id} to defaults: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.logger.error("Error resetting mod %s to defaults: %s", workshop_id, e)
             return False
 
     def export_mod_config(
@@ -311,8 +329,8 @@ class ModConfigManager:
 
             return export_data
 
-        except Exception as e:
-            self.logger.error(f"Error exporting mod config for {workshop_id}: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.logger.error("Error exporting mod config for %s: %s", workshop_id, e)
             return None
 
     def import_mod_config(
@@ -328,8 +346,8 @@ class ModConfigManager:
                 workshop_id, config_data["configuration"], shard_name
             )
 
-        except Exception as e:
-            self.logger.error(f"Error importing mod config for {workshop_id}: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.logger.error("Error importing mod config for %s: %s", workshop_id, e)
             return False
 
     def get_config_summary(self, workshop_id: str, shard_name: str = "Master") -> Dict:
@@ -359,8 +377,8 @@ class ModConfigManager:
                 "needs_attention": configured_options < total_options,
             }
 
-        except Exception as e:
-            self.logger.error(f"Error getting config summary for {workshop_id}: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            self.logger.error("Error getting config summary for %s: %s", workshop_id, e)
             return {
                 "total_options": 0,
                 "configured_options": 0,
@@ -397,9 +415,9 @@ class ModConfigManager:
 
             return suggestions
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.logger.error(
-                f"Error generating config suggestions for {workshop_id}: {e}"
+                "Error generating config suggestions for %s: %s", workshop_id, e
             )
             return {}
 

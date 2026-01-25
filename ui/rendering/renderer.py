@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from ui.app import TUIApp
 
 
-class Renderer:
+class Renderer:  # pylint: disable=too-few-public-methods
     """Main renderer for the TUI application."""
 
     def __init__(self, stdscr, state_manager: StateManager):
@@ -91,7 +91,7 @@ class Renderer:
         """Render the header."""
         state = self.state_manager.state
         title = "DST FISH MANAGER"
-        if state.is_working:
+        if state.ui_state.is_working:
             title += " [WAITING...]"
 
         # Clear header line with background color
@@ -166,35 +166,45 @@ class Renderer:
                 )
 
             # List players starting from line 3
-            if h > 4 and status.players:
-                max_players_to_show = h - 4
-                for i, p in enumerate(status.players):
-                    if i < max_players_to_show - 1 or (
-                        i == max_players_to_show - 1
-                        and len(status.players) == max_players_to_show
-                    ):
-                        p_line = f"  {p['name']} - {p['char']}"
-                        try:
-                            win.addstr(
-                                3 + i,
-                                2,
-                                truncate_string(p_line, w - 4),
-                                self.theme.pairs["default"],
-                            )
-                        except curses.error:
-                            pass
-                    else:
-                        remaining = len(status.players) - i
-                        win.addstr(
-                            3 + i,
-                            2,
-                            f"  ... and {remaining} more",
-                            self.theme.pairs["default"],
-                        )
-                        break
+            if h > 4:
+                self._render_player_list(win, status.players, (3, h, w))
 
         except curses.error:
             pass
+
+    def _render_player_list(self, win, players, layout_info) -> None:
+        """Render list of players in status window."""
+        if not players:
+            return
+
+        start_y, h, w = layout_info
+        max_players_to_show = h - 4
+        for i, p in enumerate(players):
+            if i < max_players_to_show - 1 or (
+                i == max_players_to_show - 1 and len(players) == max_players_to_show
+            ):
+                p_line = f"  {p['name']} - {p['char']}"
+                try:
+                    win.addstr(
+                        start_y + i,
+                        2,
+                        truncate_string(p_line, w - 4),
+                        self.theme.pairs["default"],
+                    )
+                except curses.error:
+                    pass
+            else:
+                remaining = len(players) - i
+                try:
+                    win.addstr(
+                        start_y + i,
+                        2,
+                        f"  ... and {remaining} more",
+                        self.theme.pairs["default"],
+                    )
+                except curses.error:
+                    pass
+                break
 
     def _render_shards(self) -> None:
         """Render shards window."""
@@ -213,7 +223,6 @@ class Renderer:
                 win.addstr(1, 2, "Loading shards...", self.theme.pairs["title"])
             return
 
-        actions = ["🚀 Start", "🛑 Stop", "🔄 Restart", "📜 Logs"]
         for i, shard in enumerate(shards):
             try:
                 if i >= wh - 2:
@@ -222,8 +231,9 @@ class Renderer:
                 marker = (
                     ">"
                     if (
-                        i == state.ui_state.selected_shard_idx
-                        and state.ui_state.selected_global_action_idx == -1
+                        i == state.ui_state.selection_state.selected_shard_idx
+                        and state.ui_state.selection_state.selected_global_action_idx
+                        == -1
                     )
                     else " "
                 )
@@ -244,21 +254,30 @@ class Renderer:
                 status_icon = "●" if shard.is_running else "○"
                 win.addstr(i + 1, 13, status_icon, status_color)
 
-                # Buttons
-                for j, label in enumerate(actions):
-                    btn_col = 14 + j * 11
-                    if btn_col + len(label) + 3 >= ww:
-                        break
+                self._render_shard_controls(win, i, ww, state)
 
-                    style = self.theme.pairs["default"]
-                    if (
-                        i == state.ui_state.selected_shard_idx
-                        and j == state.ui_state.selected_action_idx
-                        and state.ui_state.selected_global_action_idx == -1
-                    ):
-                        style = self.theme.pairs["highlight"]
+            except curses.error:
+                pass
 
-                    win.addstr(i + 1, btn_col, f" {label} ", style)
+    def _render_shard_controls(self, win, shard_idx: int, ww: int, state) -> None:
+        """Render shard control buttons."""
+        actions = ["🚀 Start", "🛑 Stop", "🔄 Restart", "📜 Logs"]
+
+        for j, label in enumerate(actions):
+            btn_col = 14 + j * 11
+            if btn_col + len(label) + 3 >= ww:
+                break
+
+            style = self.theme.pairs["default"]
+            if (
+                shard_idx == state.ui_state.selection_state.selected_shard_idx
+                and j == state.ui_state.selection_state.selected_action_idx
+                and state.ui_state.selection_state.selected_global_action_idx == -1
+            ):
+                style = self.theme.pairs["highlight"]
+
+            try:
+                win.addstr(shard_idx + 1, btn_col, f" {label} ", style)
             except curses.error:
                 pass
 
@@ -299,10 +318,14 @@ class Renderer:
                 }
                 theme_color = color_map.get(color_num, "default")
                 style = self.theme.pairs[theme_color]
-                if i == state.ui_state.selected_global_action_idx:
+                if i == state.ui_state.selection_state.selected_global_action_idx:
                     style = self.theme.pairs["highlight"]
 
-                marker = ">" if i == state.ui_state.selected_global_action_idx else " "
+                marker = (
+                    ">"
+                    if i == state.ui_state.selection_state.selected_global_action_idx
+                    else " "
+                )
                 win.addstr(row, col, f"{marker}{label}", style)
             except curses.error:
                 pass
@@ -315,12 +338,12 @@ class Renderer:
 
         state = self.state_manager.state
 
-        if state.ui_state.mods_viewer_active:
+        if state.ui_state.viewer_state.mods_viewer_active:
             self._draw_mods_box(win)
             self._render_mods(win)
         else:
             right_pane_title = (
-                "LOGS" if state.ui_state.log_viewer_active else "CHAT LOGS"
+                "LOGS" if state.ui_state.viewer_state.log_viewer_active else "CHAT LOGS"
             )
             self._draw_logs_box(win, right_pane_title)
             self._render_logs_pane(win)
@@ -336,7 +359,9 @@ class Renderer:
                 if i >= wh - 2:
                     break
 
-                marker = ">" if i == state.ui_state.selected_mod_idx else " "
+                marker = (
+                    ">" if i == state.ui_state.selection_state.selected_mod_idx else " "
+                )
                 win.addstr(i + 1, 1, marker, self.theme.pairs["title"])
 
                 # Status - enhanced with mod status colors
@@ -348,7 +373,7 @@ class Renderer:
                 display_name = mod.get("name", mod["id"])
                 win.addstr(i + 1, 14, truncate_string(display_name, ww - 16))
 
-                if i == state.ui_state.selected_mod_idx:
+                if i == state.ui_state.selection_state.selected_mod_idx:
                     win.chgat(i + 1, 1, ww - 2, self.theme.pairs["highlight"])
 
             except curses.error:
@@ -358,40 +383,40 @@ class Renderer:
         """Get color for mod status based on new status fields."""
         if mod.get("error_count", 0) > 0:
             return self.theme.pairs["error"]  # Red for errors
-        elif not mod.get("configuration_valid", True):
+        if not mod.get("configuration_valid", True):
             return self.theme.pairs["warning"]  # Yellow for config issues
-        elif mod.get("loaded_in_game", False) and mod.get("enabled", False):
+        if mod.get("loaded_in_game", False) and mod.get("enabled", False):
             return self.theme.pairs["success"]  # Green for loaded and enabled
-        elif mod.get("enabled", False) and not mod.get("loaded_in_game", False):
+        if mod.get("enabled", False) and not mod.get("loaded_in_game", False):
             return self.theme.pairs["info"]  # Cyan for enabled but not loaded
-        else:
-            return self.theme.pairs["default"]  # Default for disabled
+
+        return self.theme.pairs["default"]  # Default for disabled
 
     def _get_mod_status_text(self, mod) -> str:
         """Get status text for mod."""
         if mod.get("error_count", 0) > 0:
             error_count = mod["error_count"]
             return f"[ERROR:{error_count}] "
-        elif not mod.get("configuration_valid", True):
+        if not mod.get("configuration_valid", True):
             return "[CONFIG] "
-        elif mod.get("loaded_in_game", False) and mod.get("enabled", False):
+        if mod.get("loaded_in_game", False) and mod.get("enabled", False):
             return "[LOADED] "
-        elif mod.get("enabled", False):
+        if mod.get("enabled", False):
             return "[ENABLED] "
-        else:
-            return "[DISABLED] "
+
+        return "[DISABLED] "
 
     def _render_logs_pane(self, win) -> None:
         """Render logs or chat pane."""
         state = self.state_manager.state
 
-        if state.ui_state.log_viewer_active:
+        if state.ui_state.viewer_state.log_viewer_active:
             lh, lw_box = win.getmaxyx()
             for i in range(1, lh - 1):
-                idx = state.ui_state.log_scroll_pos + i - 1
-                if idx < len(state.ui_state.log_content) and lw_box > 2:
+                idx = state.ui_state.viewer_state.log_scroll_pos + i - 1
+                if idx < len(state.ui_state.viewer_state.log_content) and lw_box > 2:
                     try:
-                        line = state.ui_state.log_content[idx]
+                        line = state.ui_state.viewer_state.log_content[idx]
                         win.addstr(i, 1, truncate_string(line, lw_box - 2))
                     except curses.error:
                         pass
@@ -459,7 +484,7 @@ class Renderer:
         """Render the footer."""
         state = self.state_manager.state
 
-        if state.ui_state.mods_viewer_active:
+        if state.ui_state.viewer_state.mods_viewer_active:
             footer = " ARROWS:NAV | ENTER:TOGGLE | A:ADD | M:BACK | Q:EXIT "
         else:
             footer = (

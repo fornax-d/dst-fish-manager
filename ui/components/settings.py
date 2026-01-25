@@ -4,8 +4,23 @@
 """Settings UI component for cluster and branch management with proper boxes and colors."""
 
 import curses
+from dataclasses import dataclass, field
+from typing import List
 
 from features.cluster.cluster_manager import BranchManager, ClusterManager
+from ui.rendering.themes import BoxChars
+from utils.drawing import draw_box, get_branch_color
+
+
+@dataclass
+class SettingsState:  # pylint: disable=too-few-public-methods
+    """State for settings UI."""
+
+    available_clusters: List[str] = field(default_factory=list)
+    available_branches: List[str] = field(default_factory=list)
+    selected_cluster_idx: int = 0
+    selected_branch_idx: int = 0
+    active: bool = False
 
 
 class SettingsUI:
@@ -20,49 +35,49 @@ class SettingsUI:
         self.cluster_manager = ClusterManager()
         self.branch_manager = BranchManager()
 
-        self.available_clusters = []
-        self.available_branches = []
-        self.selected_cluster_idx = 0
-        self.selected_branch_idx = 0
-        self.active = False
+        self.state = SettingsState()
 
     def activate(self) -> None:
         """Activate settings UI."""
-        self.available_clusters = self.cluster_manager.get_available_clusters()
-        self.available_branches = self.branch_manager.get_available_branches()
+        self.state.available_clusters = self.cluster_manager.get_available_clusters()
+        self.state.available_branches = self.branch_manager.get_available_branches()
 
         current_cluster = self.cluster_manager.get_current_cluster()
         current_branch = self.branch_manager.get_current_branch()
 
-        if current_cluster in self.available_clusters:
-            self.selected_cluster_idx = self.available_clusters.index(current_cluster)
+        if current_cluster in self.state.available_clusters:
+            self.state.selected_cluster_idx = self.state.available_clusters.index(
+                current_cluster
+            )
 
-        if current_branch in self.available_branches:
-            self.selected_branch_idx = self.available_branches.index(current_branch)
+        if current_branch in self.state.available_branches:
+            self.state.selected_branch_idx = self.state.available_branches.index(
+                current_branch
+            )
 
-        self.active = True
+        self.state.active = True
 
     def handle_input(self, key: int) -> bool:
         """Handle input for settings UI."""
         if key in [ord("q"), 27, ord("s")]:  # q, Esc, or s to close
-            self.active = False
+            self.state.active = False
             return True
 
-        elif key == curses.KEY_UP:
-            if self.selected_cluster_idx > 0:
-                self.selected_cluster_idx -= 1
+        if key == curses.KEY_UP:
+            if self.state.selected_cluster_idx > 0:
+                self.state.selected_cluster_idx -= 1
 
         elif key == curses.KEY_DOWN:
-            if self.selected_cluster_idx < len(self.available_clusters) - 1:
-                self.selected_cluster_idx += 1
+            if self.state.selected_cluster_idx < len(self.state.available_clusters) - 1:
+                self.state.selected_cluster_idx += 1
 
         elif key == curses.KEY_LEFT:
-            if self.selected_branch_idx > 0:
-                self.selected_branch_idx -= 1
+            if self.state.selected_branch_idx > 0:
+                self.state.selected_branch_idx -= 1
 
         elif key == curses.KEY_RIGHT:
-            if self.selected_branch_idx < len(self.available_branches) - 1:
-                self.selected_branch_idx += 1
+            if self.state.selected_branch_idx < len(self.state.available_branches) - 1:
+                self.state.selected_branch_idx += 1
 
         elif key == ord("\n"):
             self._apply_settings()
@@ -71,7 +86,7 @@ class SettingsUI:
 
     def render(self, win) -> None:
         """Render settings UI with proper boxes and colored branches."""
-        if not self.active:
+        if not self.state.active:
             return
 
         h, w = win.getmaxyx()
@@ -84,78 +99,14 @@ class SettingsUI:
         # Draw box and title
         self._draw_box(win, "SETTINGS")
 
-        # Use Catppuccin box characters
-        box_chars = {
-            "tl": "╭",
-            "tr": "╮",
-            "bl": "╰",
-            "br": "╯",
-            "v": "│",
-            "h": "─",
-            "ml": "├",
-            "mr": "┤",
-            "mt": "┬",
-            "mb": "┴",
-        }
-
-        # Cluster selection
-        cluster_label = "Cluster:"
-        win.addstr(2, 2, cluster_label, self.theme.pairs["default"])
-
+        # Calculations for layout
         y_offset = 3
-        for i, cluster in enumerate(self.available_clusters):
-            if i + y_offset >= h - 2:
-                break
+        cluster_count = len(self.state.available_clusters)
 
-            marker = ">" if i == self.selected_cluster_idx else " "
-            color = (
-                self.theme.pairs["highlight"]
-                if i == self.selected_cluster_idx
-                else self.theme.pairs["default"]
-            )
-
-            line = f"{marker} {cluster}"
-            if i == 0 and cluster == "auto":
-                line += " (auto-detect)"
-
-            win.addstr(i + y_offset, 2, line, color)
-
-        # Add horizontal separator
-        cluster_count = len(self.available_clusters)
-        separator_y = y_offset + cluster_count + 1
-        if separator_y < h - 2:
-            win.addstr(separator_y, 1, box_chars["ml"])
-            win.addstr(separator_y, w - 1, box_chars["mr"])
-            for x in range(2, w - 1):
-                win.addstr(separator_y, x, box_chars["h"])
-
-        # Branch selection
-        branch_label = "Branch:"
-        branch_y = y_offset + cluster_count + 3
-        win.addstr(branch_y, 2, branch_label, self.theme.pairs["default"])
-
-        for i, branch in enumerate(self.available_branches):
-            if branch_y + 1 + i >= h - 2:
-                break
-
-            marker = ">" if i == self.selected_branch_idx else " "
-
-            # Color branches based on stability
-            if branch == "main":
-                branch_color = self.theme.pairs["success"]  # Green for stable
-            elif branch == "beta":
-                branch_color = self.theme.pairs["error"]  # Red for beta/unstable
-            else:
-                branch_color = self.theme.pairs["default"]
-
-            color = (
-                self.theme.pairs["highlight"]
-                if i == self.selected_branch_idx
-                else branch_color
-            )
-
-            line = f"{marker} {branch}"
-            win.addstr(branch_y + 1 + i, 2, line, color)
+        # Render sections
+        self._render_clusters(win, y_offset, h)
+        self._draw_separator(win, y_offset + cluster_count + 1, h, w)
+        self._render_branches(win, y_offset + cluster_count + 3, h)
 
         # Instructions
         instructions = (
@@ -164,62 +115,73 @@ class SettingsUI:
         if len(instructions) < w - 4:
             win.addstr(h - 2, 2, instructions, self.theme.pairs["footer"])
 
+    def _render_clusters(self, win, start_y: int, h: int) -> None:
+        """Render cluster selection section."""
+        cluster_label = "Cluster:"
+        win.addstr(start_y - 1, 2, cluster_label, self.theme.pairs["default"])
+
+        for i, cluster in enumerate(self.state.available_clusters):
+            if i + start_y >= h - 2:
+                break
+
+            marker = ">" if i == self.state.selected_cluster_idx else " "
+            color = (
+                self.theme.pairs["highlight"]
+                if i == self.state.selected_cluster_idx
+                else self.theme.pairs["default"]
+            )
+
+            line = f"{marker} {cluster}"
+            if i == 0 and cluster == "auto":
+                line += " (auto-detect)"
+
+            win.addstr(i + start_y, 2, line, color)
+
+    def _draw_separator(self, win, y: int, h: int, w: int) -> None:
+        """Draw horizontal separator."""
+        if y < h - 2:
+            win.addstr(y, 1, BoxChars.chars["ml"])
+            win.addstr(y, w - 1, BoxChars.chars["mr"])
+            for x in range(2, w - 1):
+                win.addstr(y, x, BoxChars.chars["h"])
+
+    def _render_branches(self, win, start_y: int, h: int) -> None:
+        """Render branch selection section."""
+        branch_label = "Branch:"
+        win.addstr(start_y - 1, 2, branch_label, self.theme.pairs["default"])
+
+        for i, branch in enumerate(self.state.available_branches):
+            if start_y + 1 + i >= h - 2:
+                break
+
+            marker = ">" if i == self.state.selected_branch_idx else " "
+
+            # Color branches based on stability
+            branch_color = get_branch_color(branch, self.theme)
+
+            color = (
+                self.theme.pairs["highlight"]
+                if i == self.state.selected_branch_idx
+                else branch_color
+            )
+
+            line = f"{marker} {branch}"
+            win.addstr(start_y + i, 2, line, color)
+
     def _draw_box(self, win, title: str) -> None:
         """Draw a themed box with title on a window."""
-        try:
-            h, w = win.getmaxyx()
-            if h < 2 or w < 2:
-                return
-
-            win.attron(self.theme.pairs["border"])
-
-            # Use Catppuccin box characters (same as main app)
-            box_chars = {
-                "tl": "╭",
-                "tr": "╮",
-                "bl": "╰",
-                "br": "╯",
-                "v": "│",
-                "h": "─",
-                "ml": "├",
-                "mr": "┤",
-                "mt": "┬",
-                "mb": "┴",
-            }
-
-            # Corners
-            win.addstr(0, 0, box_chars["tl"])
-            win.addstr(0, w - 1, box_chars["tr"])
-            win.addstr(h - 1, 0, box_chars["bl"])
-            win.addstr(h - 1, w - 1, box_chars["br"])
-
-            # Lines
-            for x in range(1, w - 1):
-                win.addstr(0, x, box_chars["h"])
-                win.addstr(h - 1, x, box_chars["h"])
-            for y in range(1, h - 1):
-                win.addstr(y, 0, box_chars["v"])
-                win.addstr(y, w - 1, box_chars["v"])
-
-            win.attroff(self.theme.pairs["border"])
-
-            if title and w > len(title) + 4:
-                win.addstr(
-                    0, 2, f" {title} ", self.theme.pairs["title"] | curses.A_BOLD
-                )
-        except curses.error:
-            pass
+        draw_box(win, self.theme, BoxChars.chars, title)
 
     def _apply_settings(self) -> None:
         """Apply selected settings."""
-        if self.selected_cluster_idx < len(self.available_clusters):
-            new_cluster = self.available_clusters[self.selected_cluster_idx]
+        if self.state.selected_cluster_idx < len(self.state.available_clusters):
+            new_cluster = self.state.available_clusters[self.state.selected_cluster_idx]
             success = self.cluster_manager.set_cluster(new_cluster)
             if not success:
                 self._show_error("Failed to set cluster")
 
-        if self.selected_branch_idx < len(self.available_branches):
-            new_branch = self.available_branches[self.selected_branch_idx]
+        if self.state.selected_branch_idx < len(self.state.available_branches):
+            new_branch = self.state.available_branches[self.state.selected_branch_idx]
             success = self.branch_manager.set_branch(new_branch)
             if not success:
                 self._show_error("Failed to set branch")
@@ -238,4 +200,3 @@ class SettingsUI:
     def _show_popup(self, message: str, color_pair) -> None:
         """Show a temporary popup message."""
         # For now, just print to screen - in real implementation would show popup
-        pass

@@ -3,10 +3,11 @@
 
 """Event system for decoupled communication."""
 
-from enum import Enum
-from typing import Any, Callable, Dict, List
 import logging
 import threading
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Callable, Dict, List
 
 
 class EventType(Enum):
@@ -23,13 +24,13 @@ class EventType(Enum):
     EXIT_REQUESTED = "exit_requested"
 
 
+@dataclass
 class Event:
     """Application event."""
 
-    def __init__(self, event_type: EventType, data: Any = None):
-        self.type = event_type
-        self.data = data
-        self.timestamp = None
+    type: EventType
+    data: Any = None
+    timestamp: Any = None
 
 
 class EventBus:
@@ -63,7 +64,9 @@ class EventBus:
         for callback in subscribers:
             try:
                 callback(event)
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                # Broad exception catch is intentional here - we don't want one
+                # subscriber's exception to break the entire event system
                 logging.getLogger(__name__).warning(
                     "Event subscriber %s raised exception: %s", callback.__name__, e
                 )

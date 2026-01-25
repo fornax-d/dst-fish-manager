@@ -6,7 +6,7 @@
 import curses
 
 
-class Theme:
+class Theme:  # pylint: disable=too-few-public-methods
     """Catppuccin Mocha theme for curses."""
 
     def __init__(self):
@@ -71,19 +71,18 @@ class Theme:
         }
 
 
-class BoxChars:
+class BoxChars:  # pylint: disable=too-few-public-methods
     """Box drawing characters."""
 
-    def __init__(self):
-        self.chars = {
-            "tl": "╭",
-            "tr": "╮",
-            "bl": "╰",
-            "br": "╯",
-            "v": "│",
-            "h": "─",
-            "ml": "├",
-            "mr": "┤",
-            "mt": "┬",
-            "mb": "┴",
-        }
+    chars = {
+        "tl": "╭",
+        "tr": "╮",
+        "bl": "╰",
+        "br": "╯",
+        "v": "│",
+        "h": "─",
+        "ml": "├",
+        "mr": "┤",
+        "mt": "┬",
+        "mb": "┴",
+    }

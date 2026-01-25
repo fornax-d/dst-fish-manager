@@ -3,11 +3,13 @@
 
 """Main manager service that orchestrates all operations."""
 
-from typing import List, Tuple, Dict
+from typing import Dict, List, Tuple
 
+from features.chat.chat_manager import ChatManager
+from features.shards.shard_manager import ShardManager
+from features.status.status_manager import StatusManager
 from services.game_service import GameService
 from services.systemd_service import SystemDService
-from features.shards.shard_manager import ShardManager
 from utils.config import Shard
 
 
@@ -53,8 +55,6 @@ class ManagerService:
 
     def get_chat_logs(self, lines: int = 50) -> List[str]:
         """Gets the latest chat messages from the game chat log."""
-        from features.chat.chat_manager import ChatManager
-
         return ChatManager.get_chat_logs(lines)
 
     def run_updater(self):
@@ -67,18 +67,12 @@ class ManagerService:
 
     def send_chat_message(self, shard_name: str, message: str) -> Tuple[bool, str]:
         """Sends a chat message using c_announce() command."""
-        from features.chat.chat_manager import ChatManager
-
         return ChatManager.send_chat_message(shard_name, message)
 
     def get_server_status(self, shard_name: str = "Master") -> Dict:
         """Gets server status information."""
-        from features.status.status_manager import StatusManager
-
         return StatusManager.get_server_status(shard_name)
 
     def request_status_update(self, shard_name: str = "Master") -> bool:
         """Requests status update from server."""
-        from features.status.status_manager import StatusManager
-
         return StatusManager.request_status_update(shard_name)

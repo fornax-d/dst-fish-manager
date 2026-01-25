@@ -11,11 +11,12 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from utils.config import get_game_config
+
 from ..status.status_manager import StatusManager
 from .config_manager import mod_config_manager
 
 
-class ModManager:
+class ModManager:  # pylint: disable=too-many-instance-attributes, too-many-public-methods
     """Handles parsing and editing of DST mod files."""
 
     def __init__(self):
@@ -91,7 +92,9 @@ class ModManager:
             name_match = re.search(r'name\s*=\s*"(.*?)"', content)
             if name_match:
                 return name_match.group(1)
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Broad exception catch is intentional here - we want to handle
+            # any errors during mod info reading gracefully
             logging.getLogger(__name__).debug(
                 "Failed to read mod info from %s: %s", info_path, e
             )
@@ -197,6 +200,7 @@ class ModManager:
         Enhanced version of list_mods that includes real-time status information.
         Returns a list of dicts with additional status fields.
         """
+        # pylint: disable=unused-argument
         mods = self.list_mods(shard_name)
 
         # Update status manager with current mods
@@ -234,14 +238,13 @@ class ModManager:
         """Get color code for mod status display."""
         if mod_status.error_count > 0:
             return "red"
-        elif not mod_status.configuration_valid:
+        if not mod_status.configuration_valid:
             return "yellow"
-        elif mod_status.loaded_in_game and mod_status.enabled:
+        if mod_status.loaded_in_game and mod_status.enabled:
             return "green"
-        elif mod_status.enabled and not mod_status.loaded_in_game:
+        if mod_status.enabled and not mod_status.loaded_in_game:
             return "cyan"
-        else:
-            return "white"
+        return "white"
 
     def start_auto_refresh(self, interval: int = 30):
         """Start automatic refreshing of mod status."""
@@ -261,14 +264,17 @@ class ModManager:
                     if self._last_mod_list:  # Only refresh if we have mods to monitor
                         self.list_mods_with_status(force_refresh=True)
                         self.logger.debug(
-                            f"Auto-refreshed mod status for {len(self._last_mod_list)} mods"
+                            "Auto-refreshed mod status for %s mods",
+                            len(self._last_mod_list),
                         )
-                except Exception as e:
-                    self.logger.error(f"Error in auto-refresh loop: {e}")
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    # Broad exception catch is intentional here - we want to handle
+                    # any errors in the refresh loop gracefully to keep it running
+                    self.logger.error("Error in auto-refresh loop: %s", e)
 
         self._refresh_thread = threading.Thread(target=refresh_loop, daemon=True)
         self._refresh_thread.start()
-        self.logger.info(f"Started auto-refresh with {interval}s interval")
+        self.logger.info("Started auto-refresh with %ss interval", interval)
 
     def stop_auto_refresh(self):
         """Stop automatic refreshing of mod status."""
@@ -367,7 +373,9 @@ class ModManager:
             # Set overall validity
             validation_result["valid"] = len(validation_result["errors"]) == 0
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Broad exception catch is intentional here - we want to handle
+            # any errors during validation gracefully
             validation_result["valid"] = False
             validation_result["errors"].append(f"Validation failed: {str(e)}")
 
@@ -475,7 +483,9 @@ class ModManager:
                 f"Mod {workshop_id}: Has configurable options - ensure they are properly set"
             )
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Broad exception catch is intentional here - we want to handle
+            # any errors during mod validation gracefully
             result["warnings"].append(f"Could not validate against modinfo: {str(e)}")
 
         return result
@@ -503,7 +513,7 @@ class ModManager:
             # Fix syntax errors
             for error in validation["errors"]:
                 if "Unbalanced" in error:
-                    if self._fix_balancing_issue(workshop_id, shard_name):
+                    if self._fix_balancing_issue(shard_name):
                         fix_result["fixed"].append("Fixed balancing issue")
                     else:
                         fix_result["remaining_issues"].append(error)
@@ -513,7 +523,9 @@ class ModManager:
             fix_result["remaining_issues"].extend(final_validation["errors"])
             fix_result["success"] = len(final_validation["errors"]) == 0
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Broad exception catch is intentional here - we want to handle
+            # any errors during mod fixing gracefully
             fix_result["remaining_issues"].append(f"Fix attempt failed: {str(e)}")
 
         return fix_result
@@ -548,10 +560,10 @@ class ModManager:
 
             return False
 
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             return False
 
-    def _fix_balancing_issue(self, workshop_id: str, shard_name: str) -> bool:
+    def _fix_balancing_issue(self, shard_name: str) -> bool:
         """Attempt to fix brace/bracket balancing issues."""
         try:
             path = self.get_mod_overrides_path(shard_name)
@@ -567,10 +579,9 @@ class ModManager:
                 content += "\n" + "}" * missing
                 path.write_text(content)
                 return True
-            else:
-                return False
+            return False
 
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             return False
 
     def get_mod_configuration_options(self, workshop_id: str) -> List[Dict]:

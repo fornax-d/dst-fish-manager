@@ -8,6 +8,8 @@ import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from features.chat.chat_manager import ChatManager
+from features.status.status_manager import StatusManager
 from utils.config import HOME_DIR
 
 
@@ -17,8 +19,6 @@ class GameService:
     @staticmethod
     def get_chat_logs(lines: int = 50) -> List[str]:
         """Gets the latest chat messages from the game chat log."""
-        from features.chat.chat_manager import ChatManager
-
         return ChatManager.get_chat_logs(lines)
 
     @staticmethod
@@ -50,26 +50,19 @@ class GameService:
     @staticmethod
     def send_command(shard_name: str, command: str) -> Tuple[bool, str]:
         """Sends a command to the specified shard's console."""
-        from features.chat.chat_manager import ChatManager
-
         return ChatManager.send_command(shard_name, command)
 
     @staticmethod
     def send_chat_message(shard_name: str, message: str) -> Tuple[bool, str]:
         """Sends a chat message using c_announce() command."""
-        from features.chat.chat_manager import ChatManager
-
         return ChatManager.send_chat_message(shard_name, message)
 
     @staticmethod
     def request_status_update(shard_name: Optional[str] = None) -> bool:
         """Sends Lua commands to the server to dump current status into the logs."""
-        from features.status.status_manager import StatusManager
-
         return StatusManager.request_status_update(shard_name)
 
     @staticmethod
     def get_server_status(shard_name: Optional[str] = None) -> Dict:
-        from features.status.status_manager import StatusManager
-
+        """Gets server status information."""
         return StatusManager.get_server_status(shard_name)

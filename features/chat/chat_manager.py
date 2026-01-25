@@ -26,7 +26,9 @@ class ChatManager:
             available_clusters = config_manager.get_available_clusters()
             return [
                 f"Chat log file not found at {chat_log_path}.",
-                f"Available clusters: {', '.join(available_clusters) if available_clusters else 'None'}",
+                f"Available clusters: {
+                    ', '.join(available_clusters) if available_clusters else 'None'
+                }",
                 f"Using cluster: {cluster_name}",
                 "Make sure the server is running and the cluster directory exists.",
             ]
@@ -36,9 +38,10 @@ class ChatManager:
                 last_lines = collections.deque(f, maxlen=lines)
             if last_lines:
                 return [line.strip() for line in last_lines]
-            else:
-                return ["No chat messages yet."]
-        except Exception as e:
+            return ["No chat messages yet."]
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Broad exception catch is intentional here - we want to handle
+            # any errors during chat log reading gracefully
             return [f"Error reading chat log: {e}"]
 
     @staticmethod
@@ -61,8 +64,10 @@ class ChatManager:
 
         try:
             echo_cmd = ["echo", command]
-            with open(fifo_path, "w") as fifo:
+            with open(fifo_path, "w", encoding="utf-8") as fifo:
                 subprocess.run(echo_cmd, stdout=fifo, check=True, timeout=5)
             return True, "Command sent successfully."
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # Broad exception catch is intentional here - we want to handle
+            # any errors during command sending gracefully
             return False, f"Failed to send command to FIFO: {e}"
