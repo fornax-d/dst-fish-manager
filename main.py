@@ -15,8 +15,19 @@ from ui.app import main  # noqa: E402,C0413  # pylint: disable=wrong-import-posi
 
 if __name__ == "__main__":
     import curses
+    from utils.logger import setup_logging
+
+    # Setup logging
+    setup_logging()
 
     try:
         curses.wrapper(main)
     except KeyboardInterrupt:
         pass
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        # Also catch exceptions that bubble up from curses wrapper
+        import logging
+
+        logging.critical("Fatal error", exc_info=True)
+        print(f"Fatal error occurred: {e}")
+        print("Check log.txt for details.")

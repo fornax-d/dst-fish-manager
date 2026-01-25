@@ -10,7 +10,7 @@ from features.shards.shard_manager import ShardManager
 from features.status.status_manager import StatusManager
 from services.game_service import GameService
 from services.systemd_service import SystemDService
-from utils.config import Shard
+from utils.config import Shard, write_cluster_token
 
 
 class ManagerService:
@@ -61,6 +61,10 @@ class ManagerService:
         """Runs the dst-updater script."""
         return self.game_service.run_updater()
 
+    def update_cluster_token(self, token: str) -> bool:
+        """Updates the cluster token."""
+        return write_cluster_token(token)
+
     def send_command(self, shard_name: str, command: str) -> Tuple[bool, str]:
         """Sends a command to the specified shard's console."""
         return self.game_service.send_command(shard_name, command)
@@ -68,6 +72,18 @@ class ManagerService:
     def send_chat_message(self, shard_name: str, message: str) -> Tuple[bool, str]:
         """Sends a chat message using c_announce() command."""
         return ChatManager.send_chat_message(shard_name, message)
+
+    def rollback_shard(self, shard_name: str, count: int = 1) -> Tuple[bool, str]:
+        """Rollbacks the shard."""
+        return self.game_service.rollback_shard(shard_name, count)
+
+    def save_shard(self, shard_name: str) -> Tuple[bool, str]:
+        """Saves the shard."""
+        return self.game_service.save_shard(shard_name)
+
+    def reset_shard(self, shard_name: str) -> Tuple[bool, str]:
+        """Resets the shard."""
+        return self.game_service.reset_shard(shard_name)
 
     def get_server_status(self, shard_name: str = "Master") -> Dict:
         """Gets server status information."""

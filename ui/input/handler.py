@@ -127,11 +127,11 @@ class InputHandler:
         if state.ui_state.selection_state.selected_global_action_idx != -1:
             state.ui_state.selection_state.selected_global_action_idx = (
                 state.ui_state.selection_state.selected_global_action_idx - 1
-            ) % 6
+            ) % 7
         else:
             state.ui_state.selection_state.selected_action_idx = (
                 state.ui_state.selection_state.selected_action_idx - 1
-            ) % 4
+            ) % 5
         return False
 
     def _handle_right(self, _stdscr, _key) -> bool:
@@ -140,11 +140,11 @@ class InputHandler:
         if state.ui_state.selection_state.selected_global_action_idx != -1:
             state.ui_state.selection_state.selected_global_action_idx = (
                 state.ui_state.selection_state.selected_global_action_idx + 1
-            ) % 6
+            ) % 7
         else:
             state.ui_state.selection_state.selected_action_idx = (
                 state.ui_state.selection_state.selected_action_idx + 1
-            ) % 4
+            ) % 5
         return False
 
     def _handle_enter(self, _stdscr, _key) -> bool:

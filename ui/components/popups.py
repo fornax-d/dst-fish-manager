@@ -113,9 +113,54 @@ class PopupManager:
         except curses.error:
             return None
         finally:
-            # Always restore settings
             curses.curs_set(0)
             self.stdscr.nodelay(1)
+
+    def choice_popup(self, title: str, options: list) -> Optional[int]:
+        """Create a choice popup and return the selected index."""
+        h, w = self.stdscr.getmaxyx()
+        popup_h = len(options) + 4
+        popup_w = max(len(title) + 6, max(len(o) for o in options) + 8)
+        popup_y = (h - popup_h) // 2
+        popup_x = (w - popup_w) // 2
+
+        popup = curses.newwin(popup_h, popup_w, popup_y, popup_x)
+        popup.bkgd(" ", self.theme.pairs["default"])
+        popup.keypad(True)
+
+        selected_idx = 0
+        self.stdscr.nodelay(0)
+
+        try:
+            while True:
+                popup.erase()
+                self._draw_popup_box(popup, title)
+                self._draw_choice_options(popup, options, selected_idx)
+                popup.refresh()
+                key = popup.getch()
+
+                if key in [ord("q"), 27]:
+                    return None
+                if key == ord("\n"):
+                    return selected_idx
+                if key == curses.KEY_UP:
+                    selected_idx = max(0, selected_idx - 1)
+                elif key == curses.KEY_DOWN:
+                    selected_idx = min(len(options) - 1, selected_idx + 1)
+
+        finally:
+            self.stdscr.nodelay(1)
+
+    def _draw_choice_options(self, popup, options, selected_idx):
+        """Draw options for choice popup."""
+        for i, option in enumerate(options):
+            style = self.theme.pairs["default"]
+            marker = " "
+            if i == selected_idx:
+                style = self.theme.pairs["highlight"]
+                marker = ">"
+
+            popup.addstr(i + 2, 2, f"{marker} {option}", style)
 
     def _create_popup_settings_state(
         self, cluster_manager, branch_manager

@@ -133,6 +133,7 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
                     days_left=status_dict.get("days_left", "Unknown"),
                     phase=status_dict.get("phase", "Unknown"),
                     players=status_dict.get("players", []),
+                    memory_usage=self.status_manager.get_memory_usage(),
                 )
 
                 # Update shards status
@@ -164,11 +165,21 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
 
         if state.ui_state.selection_state.selected_global_action_idx != -1:
             # Global action
-            actions = ["start", "stop", "enable", "disable", "restart", "update"]
+            actions = [
+                "start",
+                "stop",
+                "enable",
+                "disable",
+                "restart",
+                "update",
+                "token",
+            ]
             action = actions[state.ui_state.selection_state.selected_global_action_idx]
 
             if action == "update":
                 self._handle_update()
+            elif action == "token":
+                self._handle_token()
             else:
                 shards = self.state_manager.get_shards_copy()
                 self.background_coordinator.run_in_background(
@@ -181,14 +192,42 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
                 return
 
             shard = shards[state.ui_state.selection_state.selected_shard_idx]
-            actions = ["start", "stop", "restart", "logs"]
+            actions = ["start", "stop", "restart", "actions", "logs"]
             action = actions[state.ui_state.selection_state.selected_action_idx]
 
             if action == "logs":
                 self._handle_logs(shard.name)
+            elif action == "actions":
+                self._handle_shard_actions(shard.name)
             else:
                 self.background_coordinator.run_in_background(
                     self.manager_service.control_shard, shard.name, action
+                )
+
+    def _handle_shard_actions(self, shard_name: str) -> None:
+        """Handle shard advanced actions."""
+        options = ["Rollback (1 day)", "Force Save", "Regenerate World"]
+        selection = self.renderer.popup_manager.choice_popup("Shard Actions", options)
+
+        if selection is None:
+            return
+
+        if selection == 0:  # Rollback
+            self.background_coordinator.run_in_background(
+                self.manager_service.rollback_shard, shard_name, 1
+            )
+        elif selection == 1:  # Save
+            self.background_coordinator.run_in_background(
+                self.manager_service.save_shard, shard_name
+            )
+        elif selection == 2:  # Regenerate
+            # Confirm regeneration
+            confirm = self.renderer.popup_manager.choice_popup(
+                f"Regenerate {shard_name}?", ["No, cancel", "Yes, DESTROY and reset"]
+            )
+            if confirm == 1:
+                self.background_coordinator.run_in_background(
+                    self.manager_service.reset_shard, shard_name
                 )
 
     def _toggle_enable(self) -> None:
@@ -371,6 +410,28 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
                 f"Error during update: {e}"
             )
 
+    def _handle_token(self) -> None:
+        """Handle cluster token update."""
+        token = self.renderer.popup_manager.text_input_popup(
+            "Enter Cluster Token", width=60
+        )
+        if token:
+            if self.manager_service.update_cluster_token(token):
+                # Show success message in log (or popup)
+                self.state_manager.state.ui_state.viewer_state.log_content = [
+                    "Checking server status...",
+                    "Cluster token updated successfully!",
+                ]
+                self.state_manager.state.ui_state.viewer_state.log_viewer_active = True
+                self.state_manager.state.ui_state.viewer_state.log_scroll_pos = 0
+            else:
+                self.state_manager.state.ui_state.viewer_state.log_content = [
+                    "Checking server status...",
+                    "Failed to update cluster token.",
+                ]
+                self.state_manager.state.ui_state.viewer_state.log_viewer_active = True
+                self.state_manager.state.ui_state.viewer_state.log_scroll_pos = 0
+
     def _process_update_line(self, line: str) -> None:
         """Process a single line of output from the updater."""
         clean_line = line.strip()
@@ -412,6 +473,7 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
             days_left=status_dict.get("days_left", "Unknown"),
             phase=status_dict.get("phase", "Unknown"),
             players=status_dict.get("players", []),
+            memory_usage=self.status_manager.get_memory_usage(),
         )
         self.state_manager.request_redraw()
 

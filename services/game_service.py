@@ -58,6 +58,22 @@ class GameService:
         return ChatManager.send_chat_message(shard_name, message)
 
     @staticmethod
+    def rollback_shard(shard_name: str, count: int = 1) -> Tuple[bool, str]:
+        """Rollbacks the shard by count days."""
+        cmd = f"c_rollback({count})"
+        return ChatManager.send_command(shard_name, cmd)
+
+    @staticmethod
+    def save_shard(shard_name: str) -> Tuple[bool, str]:
+        """Forces the shard to save."""
+        return ChatManager.send_command(shard_name, "c_save()")
+
+    @staticmethod
+    def reset_shard(shard_name: str) -> Tuple[bool, str]:
+        """Resets the shard (regenerates world)."""
+        return ChatManager.send_command(shard_name, "c_reset()")
+
+    @staticmethod
     def request_status_update(shard_name: Optional[str] = None) -> bool:
         """Sends Lua commands to the server to dump current status into the logs."""
         return StatusManager.request_status_update(shard_name)

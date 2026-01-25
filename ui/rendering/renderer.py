@@ -109,6 +109,18 @@ class Renderer:  # pylint: disable=too-few-public-methods
                 0, start_x, title, self.theme.pairs["title"] | curses.A_BOLD
             )
 
+    SEASON_EMOJIS = {
+        "autumn": "🍂",
+        "winter": "❄️",
+        "spring": "🌱",
+        "summer": "☀️",
+    }
+    PHASE_EMOJIS = {
+        "day": "☀️",
+        "dusk": "🌆",
+        "night": "🌙",
+    }
+
     def _render_status(self) -> None:
         """Render server status window."""
         win = self.window_manager.get_window("status")
@@ -124,19 +136,6 @@ class Renderer:  # pylint: disable=too-few-public-methods
         state = self.state_manager.state
         status = state.server_status
 
-        # Emoji mappings
-        season_emojis = {
-            "autumn": "🍂",
-            "winter": "❄️",
-            "spring": "🌱",
-            "summer": "☀️",
-        }
-        phase_emojis = {
-            "day": "☀️",
-            "dusk": "🌆",
-            "night": "🌙",
-        }
-
         # Clear content area with proper width
         for y in range(1, h - 1):
             try:
@@ -148,16 +147,19 @@ class Renderer:  # pylint: disable=too-few-public-methods
             season = status.season
             phase = status.phase
 
-            s_emoji = season_emojis.get(season.lower(), "❓")
-            p_emoji = phase_emojis.get(phase.lower(), "❓")
+            s_emoji = self.SEASON_EMOJIS.get(season.lower(), "❓")
+            p_emoji = self.PHASE_EMOJIS.get(phase.lower(), "❓")
 
             # Line 1: Season: Emoji | Day: ...
             line1 = f"Season: {s_emoji} | Day: {status.day}"
             if w > len(line1) + 4:
                 line1 += f" ({status.days_left} left)"
 
-            # Line 2: Phase: Emoji | Players: X
-            line2 = f"Phase: {p_emoji} | Players: {len(status.players)}"
+            # Line 2: Phase: Emoji | Players: X | RAM: Y MB
+            ram_str = f"{status.memory_usage:.0f} MB"
+            line2 = (
+                f"Phase: {p_emoji} | Players: {len(status.players)} | RAM: {ram_str}"
+            )
 
             win.addstr(1, 2, truncate_string(line1, w - 4), self.theme.pairs["default"])
             if h >= 3:
@@ -261,7 +263,7 @@ class Renderer:  # pylint: disable=too-few-public-methods
 
     def _render_shard_controls(self, win, shard_idx: int, ww: int, state) -> None:
         """Render shard control buttons."""
-        actions = ["🚀 Start", "🛑 Stop", "🔄 Restart", "📜 Logs"]
+        actions = ["🚀 Start", "🛑 Stop", "🔄 Restart", "⚡ Actions", "📜 Logs"]
 
         for j, label in enumerate(actions):
             btn_col = 14 + j * 11
@@ -297,6 +299,7 @@ class Renderer:  # pylint: disable=too-few-public-methods
             ("Disable", 4),  # error red
             ("Restart", 5),  # warning yellow
             ("Update", 2),  # title cyan
+            ("Token", 2),  # title cyan
         ]
 
         for i, (label, color_num) in enumerate(gl_actions):

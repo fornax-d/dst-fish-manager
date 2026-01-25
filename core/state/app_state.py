@@ -20,6 +20,7 @@ class ServerStatus:
     phase: str = "---"
     players: List[Dict[str, str]] = field(default_factory=list)
     master_offline_count: int = 0
+    memory_usage: float = 0.0
 
 
 @dataclass

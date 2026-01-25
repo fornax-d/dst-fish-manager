@@ -421,7 +421,7 @@ class StatusManager:  # pylint: disable=too-many-instance-attributes
     def get_memory_usage(self) -> float:
         """Get memory usage for DST processes."""
         if psutil is None:
-            return None
+            return 0.0
 
         total_memory = 0
 

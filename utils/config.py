@@ -275,3 +275,19 @@ def read_desired_shards() -> List[str]:
         for line in lines
         if line.strip() and not line.strip().startswith("#")
     ]
+
+
+def write_cluster_token(token: str) -> bool:
+    """Writes the cluster token to cluster_token.txt."""
+    game_config = get_game_config()
+    dst_dir = game_config["DONTSTARVE_DIR"]
+    cluster_name = game_config["CLUSTER_NAME"]
+
+    token_path = dst_dir / cluster_name / "cluster_token.txt"
+    try:
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text(token.strip() + "\n", encoding="utf-8")
+        return True
+    except (IOError, OSError) as e:
+        print(f"Error writing token: {e}", file=sys.stderr)
+        return False
