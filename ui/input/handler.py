@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-"""Enhanced input handler with settings support."""
+"""Input handler with settings support."""
 
 import curses
 from typing import TYPE_CHECKING, Any, Optional
@@ -13,8 +13,8 @@ if TYPE_CHECKING:
     from ui.app import TUIApp
 
 
-class EnhancedInputHandler:
-    """Enhanced input handler with settings support."""
+class InputHandler:
+    """Input handler with settings support."""
 
     def __init__(
         self, state_manager: StateManager, event_bus: EventBus, theme, popup_manager

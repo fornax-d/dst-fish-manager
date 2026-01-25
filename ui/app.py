@@ -12,7 +12,7 @@ from core.state.app_state import StateManager
 from features.mods.mod_manager import ModManager
 from features.shards.shard_manager import ShardManager
 from services.manager_service import ManagerService
-from ui.input.handler import EnhancedInputHandler
+from ui.input.handler import InputHandler
 from ui.rendering.renderer import Renderer
 
 
@@ -31,7 +31,7 @@ class TUIApp:
         self.renderer = Renderer(stdscr, self.state_manager)
 
         # Setup input handler after renderer is created
-        self.input_handler = EnhancedInputHandler(
+        self.input_handler = InputHandler(
             self.state_manager,
             self.event_bus,
             self.renderer.theme,
