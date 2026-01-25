@@ -64,10 +64,10 @@ class PopupManager:
                 return ch
 
             # Edit with escape support
-            result = box.edit(validate)
+            box.edit(validate)
             text = box.gather().strip()
             return text if text else None
-        except:
+        except (curses.error, Exception):
             return None
         finally:
             # Always restore settings

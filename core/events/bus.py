@@ -65,9 +65,7 @@ class EventBus:
                 callback(event)
             except Exception as e:
                 logging.getLogger(__name__).warning(
-                    "Event subscriber %s raised exception: %s", 
-                    callback.__name__, 
-                    e
+                    "Event subscriber %s raised exception: %s", callback.__name__, e
                 )
 
 

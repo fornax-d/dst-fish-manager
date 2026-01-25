@@ -4,7 +4,7 @@
 """Input handler with settings support."""
 
 import curses
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
 
 from core.events.bus import Event, EventBus, EventType
 from core.state.app_state import StateManager
@@ -60,7 +60,6 @@ class InputHandler:
         Process all pending input.
         Returns True if exit requested, False otherwise.
         """
-        input_received = False
         state = self.state_manager.state
 
         while True:
@@ -68,7 +67,6 @@ class InputHandler:
             if key == -1:
                 break
 
-            input_received = True
             self.state_manager.request_redraw()
 
             # Handle special modes

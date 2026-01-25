@@ -5,7 +5,6 @@
 
 import collections
 import subprocess
-import shlex
 from typing import List
 
 from utils.config import HOME_DIR, config_manager, get_game_config

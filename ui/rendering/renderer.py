@@ -4,12 +4,12 @@
 """Main renderer for the TUI."""
 
 import curses
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from core.state.app_state import StateManager
-from ui.components.windows import WindowManager
 from ui.components.popups import PopupManager
-from ui.rendering.themes import Theme, BoxChars
+from ui.components.windows import WindowManager
+from ui.rendering.themes import BoxChars, Theme
 from utils.helpers import truncate_string
 
 if TYPE_CHECKING:
@@ -36,7 +36,6 @@ class Renderer:
 
     def render(self) -> None:
         """Main render method."""
-        state = self.state_manager.state
 
         # Check minimum terminal size
         h, w = self.stdscr.getmaxyx()

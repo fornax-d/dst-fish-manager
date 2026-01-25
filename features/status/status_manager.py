@@ -3,22 +3,21 @@
 
 """Status manager for handling server status operations."""
 
-import json
 import logging
 import os
 import re
 import threading
 import time
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from utils.config import config_manager, get_game_config
+from utils.config import get_game_config
 
 
 @dataclass
 class ModStatus:
     """Mod status information."""
+
     id: str
     name: str
     enabled: bool
@@ -36,7 +35,7 @@ class StatusManager:
         self.dst_dir = self.config.get("DONTSTARVE_DIR")
         self.cluster_name = self.config.get("CLUSTER_NAME", "MyDediServer")
         self.install_dir = self.config.get("INSTALL_DIR")
-        
+
         # Mod monitoring state
         self._mod_status_cache: Dict[str, ModStatus] = {}
         self._last_update = 0
@@ -46,11 +45,11 @@ class StatusManager:
     @staticmethod
     def get_server_status(shard_name: Optional[str] = None) -> Dict:
         from utils.config import read_desired_shards
-        
+
         config = get_game_config()
         cluster_name = config.get("CLUSTER_NAME", "MyDediServer")
         dst_dir = config.get("DONTSTARVE_DIR")
-        
+
         # Get all shards if none specified
         if shard_name is None:
             shard_names = read_desired_shards()
@@ -60,7 +59,7 @@ class StatusManager:
         # Initialize with default values
         combined_status = {
             "season": "Unknown",
-            "day": "Unknown", 
+            "day": "Unknown",
             "days_left": "Unknown",
             "phase": "Unknown",
             "players": [],
@@ -75,7 +74,7 @@ class StatusManager:
             if not log_path.exists():
                 combined_status["shards"][current_shard] = {
                     "error": f"Log file not found for shard '{current_shard}'",
-                    "players": []
+                    "players": [],
                 }
                 continue
 
@@ -89,9 +88,9 @@ class StatusManager:
                 shard_status = {
                     "season": "Unknown",
                     "day": "Unknown",
-                    "days_left": "Unknown", 
+                    "days_left": "Unknown",
                     "phase": "Unknown",
-                    "players": []
+                    "players": [],
                 }
 
                 # Parse Season and Day from c_dumpseasons()
@@ -141,17 +140,19 @@ class StatusManager:
 
                 # Update main status with data from Master shard if available
                 if current_shard == "Master":
-                    combined_status.update({
-                        "season": shard_status["season"],
-                        "day": shard_status["day"],
-                        "days_left": shard_status["days_left"],
-                        "phase": shard_status["phase"]
-                    })
+                    combined_status.update(
+                        {
+                            "season": shard_status["season"],
+                            "day": shard_status["day"],
+                            "days_left": shard_status["days_left"],
+                            "phase": shard_status["phase"],
+                        }
+                    )
 
             except Exception as e:
                 combined_status["shards"][current_shard] = {
                     "error": f"Error reading shard '{current_shard}': {e}",
-                    "players": []
+                    "players": [],
                 }
 
         # Combine all players from all shards
@@ -198,27 +199,31 @@ class StatusManager:
         """Update status for all mods in list."""
         try:
             for mod_info in mods_list:
-                workshop_id = mod_info['id']
-                
+                workshop_id = mod_info["id"]
+
                 if workshop_id not in self._mod_status_cache:
                     self._mod_status_cache[workshop_id] = ModStatus(
                         id=workshop_id,
-                        name=mod_info.get('name', workshop_id),
-                        enabled=mod_info.get('enabled', False)
+                        name=mod_info.get("name", workshop_id),
+                        enabled=mod_info.get("enabled", False),
                     )
-                
+
                 mod_status = self._mod_status_cache[workshop_id]
-                mod_status.enabled = mod_info.get('enabled', False)
-                
+                mod_status.enabled = mod_info.get("enabled", False)
+
                 # Check if mod is loaded in game logs
                 mod_status.loaded_in_game = self._check_mod_loaded_in_game(workshop_id)
-                
+
                 # Validate mod configuration
-                mod_status.configuration_valid = self._validate_mod_configuration(workshop_id)
-                
+                mod_status.configuration_valid = self._validate_mod_configuration(
+                    workshop_id
+                )
+
                 # Check for mod errors in logs
-                mod_status.error_count, mod_status.last_error = self._check_mod_errors(workshop_id)
-        
+                mod_status.error_count, mod_status.last_error = self._check_mod_errors(
+                    workshop_id
+                )
+
         except Exception as e:
             self.logger.error(f"Error updating mod status: {e}")
 
@@ -227,33 +232,33 @@ class StatusManager:
         try:
             # Check in all shard log files
             cluster_path = self.dst_dir / self.cluster_name
-            
+
             if not cluster_path.exists():
                 return False
-                
+
             for shard_dir in cluster_path.iterdir():
                 if not shard_dir.is_dir():
                     continue
-                    
+
                 log_file = shard_dir / "server_log.txt"
                 if not log_file.exists():
                     continue
-                
+
                 content = log_file.read_text(encoding="utf-8", errors="ignore")
-                
+
                 # Look for mod loading messages
                 patterns = [
-                    rf'Loading mod:.*{workshop_id}',
-                    rf'Mod.*{workshop_id}.*loaded',
-                    rf'Registering mod.*{workshop_id}'
+                    rf"Loading mod:.*{workshop_id}",
+                    rf"Mod.*{workshop_id}.*loaded",
+                    rf"Registering mod.*{workshop_id}",
                 ]
-                
+
                 for pattern in patterns:
                     if re.search(pattern, content, re.IGNORECASE):
                         return True
-            
+
             return False
-            
+
         except Exception as e:
             self.logger.error(f"Error checking if mod {workshop_id} is loaded: {e}")
             return False
@@ -261,30 +266,34 @@ class StatusManager:
     def _validate_mod_configuration(self, workshop_id: str) -> bool:
         """Validate mod configuration."""
         try:
-            mod_overrides_path = self.dst_dir / self.cluster_name / "Master" / "modoverrides.lua"
+            mod_overrides_path = (
+                self.dst_dir / self.cluster_name / "Master" / "modoverrides.lua"
+            )
             if not mod_overrides_path.exists():
                 return True  # No overrides is valid
-            
+
             content = mod_overrides_path.read_text(encoding="utf-8", errors="ignore")
-            
+
             # Check if mod entry exists and has valid syntax
             mod_pattern = rf'\["{workshop_id}"\]\s*=\s*\{{([^}}]*)\}}'
             match = re.search(mod_pattern, content, re.DOTALL)
-            
+
             if not match:
                 return workshop_id not in content  # Not present is OK
-            
+
             # Basic syntax validation
             config_content = match.group(1)
-            
+
             # Check for balanced braces (basic check)
-            open_braces = config_content.count('{')
-            close_braces = config_content.count('}')
-            
+            open_braces = config_content.count("{")
+            close_braces = config_content.count("}")
+
             return open_braces == close_braces
-            
+
         except Exception as e:
-            self.logger.error(f"Error validating mod configuration for {workshop_id}: {e}")
+            self.logger.error(
+                f"Error validating mod configuration for {workshop_id}: {e}"
+            )
             return False
 
     def _check_mod_errors(self, workshop_id: str) -> Tuple[int, Optional[str]]:
@@ -292,42 +301,42 @@ class StatusManager:
         try:
             error_count = 0
             last_error = None
-            
+
             cluster_path = self.dst_dir / self.cluster_name
-            
+
             if not cluster_path.exists():
                 return 0, None
-                
+
             for shard_dir in cluster_path.iterdir():
                 if not shard_dir.is_dir():
                     continue
-                    
+
                 log_file = shard_dir / "server_log.txt"
                 if not log_file.exists():
                     continue
-                
+
                 content = log_file.read_text(encoding="utf-8", errors="ignore")
-                lines = content.split('\n')
-                
+                lines = content.split("\n")
+
                 # Look for recent errors (last 200 lines)
                 recent_lines = lines[-200:]
-                
+
                 for line in recent_lines:
                     # Look for mod-related error patterns
                     error_patterns = [
-                        rf'.*error.*{workshop_id}.*',
-                        rf'.*failed.*{workshop_id}.*',
-                        rf'.*{workshop_id}.*error.*',
-                        rf'.*mod.*{workshop_id}.*failed.*'
+                        rf".*error.*{workshop_id}.*",
+                        rf".*failed.*{workshop_id}.*",
+                        rf".*{workshop_id}.*error.*",
+                        rf".*mod.*{workshop_id}.*failed.*",
                     ]
-                    
+
                     for pattern in error_patterns:
                         if re.search(pattern, line, re.IGNORECASE):
                             error_count += 1
                             last_error = line.strip()
-            
+
             return error_count, last_error
-            
+
         except Exception as e:
             self.logger.error(f"Error checking mod errors for {workshop_id}: {e}")
             return 0, None
@@ -336,38 +345,43 @@ class StatusManager:
         """Get a summary of server and mod status."""
         # Get basic server stats (reuse existing functionality)
         server_status = self.get_server_status()
-        
+
         # Count mod status
         total_mods = len(self._mod_status_cache)
         enabled_mods = sum(1 for mod in self._mod_status_cache.values() if mod.enabled)
-        loaded_mods = sum(1 for mod in self._mod_status_cache.values() if mod.loaded_in_game)
-        mods_with_errors = sum(1 for mod in self._mod_status_cache.values() if mod.error_count > 0)
-        
+        loaded_mods = sum(
+            1 for mod in self._mod_status_cache.values() if mod.loaded_in_game
+        )
+        mods_with_errors = sum(
+            1 for mod in self._mod_status_cache.values() if mod.error_count > 0
+        )
+
         # Get player count
         player_count = len(server_status.get("players", []))
-        
+
         # Get season/day info
         day = server_status.get("day", "Unknown")
         season = server_status.get("season", "Unknown")
-        
+
         return {
             "server_stats": {
                 "player_count": player_count,
                 "day": day,
                 "season": season,
-                "shard_status": server_status.get("shards", {})
+                "shard_status": server_status.get("shards", {}),
             },
             "mod_summary": {
                 "total_mods": total_mods,
                 "enabled_mods": enabled_mods,
                 "loaded_mods": loaded_mods,
-                "mods_with_errors": mods_with_errors
+                "mods_with_errors": mods_with_errors,
             },
-            "last_update": self._last_update
+            "last_update": self._last_update,
         }
 
     def start_monitoring(self, update_interval: int = 10):
         """Start background monitoring thread."""
+
         def monitor_loop():
             while True:
                 try:
@@ -377,7 +391,7 @@ class StatusManager:
                 except Exception as e:
                     self.logger.error(f"Error in monitoring loop: {e}")
                     time.sleep(update_interval)
-        
+
         monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
         monitor_thread.start()
         self.logger.info(f"Started server monitoring with {update_interval}s interval")
@@ -386,20 +400,20 @@ class StatusManager:
         """Get memory usage for DST processes."""
         try:
             import psutil
-            
+
             total_memory = 0
-            
+
             # Find DST processes
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            for proc in psutil.process_iter(["pid", "name", "cmdline"]):
                 try:
-                    cmdline = ' '.join(proc.info['cmdline'] or [])
-                    if 'dontstarve_dedicated_server' in cmdline:
-                        total_memory += proc.info['memory_info'].rss / 1024 / 1024  # MB
+                    cmdline = " ".join(proc.info["cmdline"] or [])
+                    if "dontstarve_dedicated_server" in cmdline:
+                        total_memory += proc.info["memory_info"].rss / 1024 / 1024  # MB
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
-            
+
             return total_memory
-            
+
         except ImportError:
             # psutil not available, skip memory monitoring
             return 0.0
