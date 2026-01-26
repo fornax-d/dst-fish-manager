@@ -155,10 +155,9 @@ class Renderer:  # pylint: disable=too-few-public-methods
             if w > len(line1) + 4:
                 line1 += f" ({status.days_left} left)"
 
-            # Line 2: Phase: Emoji | Players: X | RAM: Y MB
-            ram_str = f"{status.memory_usage:.0f} MB"
+            # Line 2: Phase: Emoji | Players: X
             line2 = (
-                f"Phase: {p_emoji} | Players: {len(status.players)} | RAM: {ram_str}"
+                f"Phase: {p_emoji} | Players: {len(status.players)}"
             )
 
             win.addstr(1, 2, truncate_string(line1, w - 4), self.theme.pairs["default"])
@@ -504,3 +503,12 @@ class Renderer:  # pylint: disable=too-few-public-methods
 
         if h > 0 and w > len(footer) + 2:
             self.stdscr.addstr(h - 1, 1, footer, self.theme.pairs["footer"])
+
+        # Render RAM usage in footer
+        try:
+            ram_val = state.server_status.memory_usage
+            ram_str = f"RAM: {ram_val:.0f} MB "
+            if w > len(footer) + len(ram_str) + 4:
+                 self.stdscr.addstr(h - 1, w - len(ram_str) - 1, ram_str, self.theme.pairs["footer"])
+        except curses.error:
+            pass
