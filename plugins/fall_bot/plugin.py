@@ -5,6 +5,7 @@ import multiprocessing
 import queue
 import re
 import collections
+import time
 
 # Validating local import for fallbot_process
 # pylint: disable=import-error, wrong-import-position
@@ -40,6 +41,8 @@ class DiscordBotPlugin(IPlugin):
         self.last_chat_logs = []
         self.initial_sync = True
         self.sent_messages = collections.deque(maxlen=20)
+        self.last_status_update = 0
+
 
     def on_load(self, config, manager_service, event_bus=None):
         self.manager = manager_service
@@ -113,6 +116,75 @@ class DiscordBotPlugin(IPlugin):
                     logger.warning(f"[Discord] {msg}")
         except queue.Empty:
             pass
+
+        # 1.5 Send Status Updates (Every 30s)
+        current_time = time.time()
+        if current_time - self.last_status_update > 30:
+            self.last_status_update = current_time
+            
+            try:
+                # We need data from StatusManager. 
+                # The manager_service should have access or be able to route.
+                # Assuming manager_service has a reference to StatusManager or we can get it.
+                # In this architecture, manager_service usually holds references.
+                # Let's check how we access StatusManager.
+                # In `core/plugins/manager.py`, `manager_service` is passed.
+                # If `manager_service` is `GameService` or similar, it might have `status_manager`.
+                # If we assume `self.manager` is `ManagerService` which wraps everything...
+                # Let's try to access it via `self.manager.status_manager` if it exists, 
+                # or `self.manager.game_service.status_manager`.
+                # Based on previous context, `StatusManager` is a feature.
+                # Let's check if we can get it.
+                
+                # If we can't find it easily, we might need to rely on what `get_server_status` returns.
+                # self.manager.get_server_status() calls status_manager internally?
+                # In existing `plugin.py`: `self.manager.get_shards()` is used.
+                
+                # Let's use `self.manager.get_server_status("Master")` as a fallback or if it gives us what we need.
+                # But `StatusManager.get_server_stats_summary()` is the best one.
+                
+                # Let's assume self.manager has access to status_manager.
+                # If not, we might need to import the singleton if it is one, or look harder.
+                # Looking at `manager.py`, it receives `manager_service`.
+                # Let's try to find where `StatusManager` is instantiated.
+                # Usually `app.py` or `game_service.py`.
+                
+                # Safe bet: Use `self.manager.get_server_status("Master")` to get basic info.
+                # But we want Season/Day which `_aggregate_server_status` provides.
+                # `self.manager.get_server_status()` seems to be a method on `manager_service`.
+                # Let's look at `manager_service` definition if possible. 
+                # Actually, I don't have `manager_service.py` open. 
+                # But `plugin.py` calls `self.manager.get_shards()`.
+                
+                # Let's try to use `self.manager.status_manager` if available.
+                status_manager = getattr(self.manager, "status_manager", None)
+                if status_manager:
+                    stats = status_manager.get_server_stats_summary()
+                    # stats = {'server_stats': {'player_count': ..., 'season': ..., 'day': ..., 'phase': ...}, ...}
+                    server_stats = stats.get("server_stats", {})
+                    
+                    self.command_queue.put(("UPDATE_PRESENCE", {
+                        "season": server_stats.get("season"),
+                        "day": server_stats.get("day"),
+                        "phase": server_stats.get("server_stats", {}).get("phase") if "phase" not in server_stats else server_stats.get("phase"),
+                        # Wait, get_server_stats_summary returns flat day/season but phase is inside shards?
+                        # Let's re-read StatusManager.get_server_stats_summary
+                        # It gets season/day from combined_status.
+                        # Combined status has phase.
+                        # But get_server_stats_summary constructs a dict.
+                        # It puts: "day": day, "season": season, "shard_status": ...
+                        # It MISSES "phase" in top level of `server_stats`.
+                        # We might need to dig it from `shard_status` or fallback.
+                        # Or update StatusManager? 
+                        # I prefer not to touch StatusManager if possible to keep scope small.
+                        # I can get phase from `server_stats["shard_status"]["Master"]["phase"]`.
+                        
+                        "player_count": server_stats.get("player_count"),
+                        "phase": server_stats.get("shard_status", {}).get("Master", {}).get("phase", "Unknown")
+                    }))
+                
+            except Exception as e:
+                logger.error(f"Error sending presence update: {e}")
 
         # 2. Consume Request Queue (Commands from Bot -> Manager)
         try:
@@ -334,6 +406,17 @@ class DiscordBotPlugin(IPlugin):
                     
                     full_msg = f"{emoji} {content}".strip() if emoji else content
                     new_msgs.append(full_msg)
+                    
+                    # Optimization: Force status update on Join
+                    if tag == "Join Announcement":
+                        try:
+                            # Trigger game to dump status immediately
+                            if hasattr(self.manager, "status_manager"):
+                                self.manager.status_manager.request_status_update("Master")
+                            # Reset last status update time to force bot update in next loop
+                            self.last_status_update = 0
+                        except Exception as e:
+                            logger.error(f"Failed to force status update on join: {e}")
 
         self.last_chat_logs = chat_logs[-100:]  # Keep last 100
 

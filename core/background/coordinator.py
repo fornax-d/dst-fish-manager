@@ -118,8 +118,19 @@ class BackgroundCoordinator:
                 self.state_manager.update_timing(last_status_refresh_time=current_time)
                 self.state_manager.request_redraw()
 
-            # Status poll request (every 15 seconds)
-            if current_time - state.timing_state.last_status_poll_time > 15.0:
+            # Status poll request (Dynamic Interval)
+            # If players > 0: 15s. If players == 0: 300s (5min).
+            # But relying on stale server_status might be risky if we only update it via this poll.
+            # However, `server_status` is also updated by `_aggregate_server_status` inside StatusManager.
+            
+            # Check if any players online in cached status
+            has_players = False
+            if state.server_status.players:
+                has_players = True
+            
+            poll_interval = 15.0 if has_players else 300.0
+            
+            if current_time - state.timing_state.last_status_poll_time > poll_interval:
                 if (
                     not state.ui_state.viewer_state.log_viewer_active
                     and not state.ui_state.is_working

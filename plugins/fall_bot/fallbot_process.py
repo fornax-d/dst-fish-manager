@@ -144,6 +144,7 @@ class FishBotClient(discord.Client):
             "UPDATE_RESPONSE": self._handle_update_response,
             "PLAYERS_RESPONSE": self._handle_players_response,
             "SEND_CHAT": self._handle_send_chat,
+            "UPDATE_PRESENCE": self._handle_update_presence,
         }
 
         while not self.is_closed():
@@ -237,6 +238,45 @@ class FishBotClient(discord.Client):
                     await channel.send(data)
             except Exception as e: # pylint: disable=broad-exception-caught
                 self.log(f"Failed to send chat: {e}", "ERROR")
+
+    async def _handle_update_presence(self, data):
+        """Handle UPDATE_PRESENCE command."""
+        # data = {"season": ..., "day": ..., "players": ..., "phase": ...}
+        # Example: 🍂Autumn ☀️Day 7/20 or 🌙Idle
+        
+        try:
+            player_count = data.get("player_count", 0)
+            
+            if player_count > 0:
+                season = data.get("season", "Unknown")
+                day = data.get("day", "?")
+                # Add emojis
+                season_emojis = {
+                    "Autumn": "🍂", "Winter": "❄️", "Spring": "🌸", "Summer": "☀️", "Unknown": "?"
+                }
+                phase_emojis = {
+                    "Day": "☀️", "Dusk": "🌄", "Night": "🌙", "Unknown": ""
+                }
+                
+                s_emoji = season_emojis.get(season, "")
+                p_emoji = phase_emojis.get(data.get("phase"), "")
+                
+                status_text = f"{s_emoji}{season} {p_emoji}Day {day} (🧍{player_count})"
+                activity = discord.Activity(type=discord.ActivityType.unknown, name=status_text) 
+                # discord.Game or similar might be better, or CustomActivity if supported?
+                # Using game for now as it's most standard
+                activity = discord.Game(name=status_text)
+                await self.change_presence(status=discord.Status.online, activity=activity)
+                
+            else:
+                season = data.get("season", "Unknown")
+                day = data.get("day", "?")
+                status_text = f"Idle ({season} Day {day})"
+                activity = discord.Game(name=status_text)
+                await self.change_presence(status=discord.Status.idle, activity=activity)
+                
+        except Exception as e: # pylint: disable=broad-exception-caught
+            self.log(f"Failed to update presence: {e}", "ERROR")
 
 
 def run_bot_process(token, command_queue, request_queue, log_queue):
