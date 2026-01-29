@@ -6,7 +6,9 @@ This file is imported ONLY by the child process.
 
 import asyncio
 import os
-import queue
+import logging
+
+
 # pylint: disable=import-error
 import discord
 from discord import app_commands
@@ -22,54 +24,87 @@ class ControlPanel(discord.ui.View):
         super().__init__(timeout=None)
         self.request_queue = request_queue
 
-    @discord.ui.button(label="Start All", style=discord.ButtonStyle.success, emoji="🟢", custom_id="panel_start")
-    async def start_server(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="Start All",
+        style=discord.ButtonStyle.success,
+        emoji="🟢",
+        custom_id="panel_start",
+    )
+    async def start_server(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         """Handle Start All button."""
         # pylint: disable=unused-argument
         await interaction.response.defer()
-        self.request_queue.put(("CONTROL_SERVER", {
-            "action": "start",
-            "shard": "All",
-            "interaction_id": interaction.id
-        }))
+        self.request_queue.put(
+            (
+                "CONTROL_SERVER",
+                {"action": "start", "shard": "All", "interaction_id": interaction.id},
+            )
+        )
         await interaction.followup.send("Start command sent.", ephemeral=True)
 
-    @discord.ui.button(label="Stop All", style=discord.ButtonStyle.danger, emoji="🔴", custom_id="panel_stop")
-    async def stop_server(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="Stop All",
+        style=discord.ButtonStyle.danger,
+        emoji="🔴",
+        custom_id="panel_stop",
+    )
+    async def stop_server(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         """Handle Stop All button."""
         # pylint: disable=unused-argument
         await interaction.response.defer()
-        self.request_queue.put(("ANNOUNCE", {"message": "Server shutting down in 5 seconds..."}))
+        self.request_queue.put(
+            ("ANNOUNCE", {"message": "Server shutting down in 5 seconds..."})
+        )
         await asyncio.sleep(5)
-        self.request_queue.put(("CONTROL_SERVER", {
-            "action": "stop",
-            "shard": "All",
-            "interaction_id": interaction.id
-        }))
+        self.request_queue.put(
+            (
+                "CONTROL_SERVER",
+                {"action": "stop", "shard": "All", "interaction_id": interaction.id},
+            )
+        )
         await interaction.followup.send("Stop command sent.", ephemeral=True)
 
-    @discord.ui.button(label="Restart All", style=discord.ButtonStyle.primary, emoji="🔄", custom_id="panel_restart")
-    async def restart_server(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="Restart All",
+        style=discord.ButtonStyle.primary,
+        emoji="🔄",
+        custom_id="panel_restart",
+    )
+    async def restart_server(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         """Handle Restart All button."""
         # pylint: disable=unused-argument
         await interaction.response.defer()
-        self.request_queue.put(("ANNOUNCE", {"message": "Server restarting in 5 seconds..."}))
+        self.request_queue.put(
+            ("ANNOUNCE", {"message": "Server restarting in 5 seconds..."})
+        )
         await asyncio.sleep(5)
-        self.request_queue.put(("CONTROL_SERVER", {
-            "action": "restart",
-            "shard": "All",
-            "interaction_id": interaction.id
-        }))
+        self.request_queue.put(
+            (
+                "CONTROL_SERVER",
+                {"action": "restart", "shard": "All", "interaction_id": interaction.id},
+            )
+        )
         await interaction.followup.send("Restart command sent.", ephemeral=True)
 
-    @discord.ui.button(label="Update Server", style=discord.ButtonStyle.secondary, emoji="⬇️", custom_id="panel_update")
-    async def update_server(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(
+        label="Update Server",
+        style=discord.ButtonStyle.secondary,
+        emoji="⬇️",
+        custom_id="panel_update",
+    )
+    async def update_server(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
         """Handle Update Server button."""
         # pylint: disable=unused-argument
         await interaction.response.defer()
-        self.request_queue.put(("UPDATE_SERVER", {
-            "interaction_id": interaction.id
-        }))
+        self.request_queue.put(("UPDATE_SERVER", {"interaction_id": interaction.id}))
         await interaction.followup.send("Update command sent.", ephemeral=True)
 
 
@@ -90,7 +125,7 @@ class FishBotClient(discord.Client):
         """Log a message to the shared log queue."""
         try:
             self.log_queue.put((level, message))
-        except: # pylint: disable=bare-except
+        except Exception:  # pylint: disable=broad-exception-caught
             pass
 
     async def setup_hook(self):
@@ -124,14 +159,16 @@ class FishBotClient(discord.Client):
             return
 
         # Check channel
-        if self.chat_channel_id and str(message.channel.id) == str(self.chat_channel_id):
+        if self.chat_channel_id and str(message.channel.id) == str(
+            self.chat_channel_id
+        ):
             # Relay to game
             # Format: User: Message
             display_name = message.author.display_name
             content = message.clean_content
-            self.request_queue.put(("ANNOUNCE", {
-                "message": f"{display_name}: {content}"
-            }))
+            self.request_queue.put(
+                ("ANNOUNCE", {"message": f"{display_name}: {content}"})
+            )
 
     async def queue_listener(self):
         """Listen for commands from the main process."""
@@ -160,7 +197,7 @@ class FishBotClient(discord.Client):
                         self.log(f"Unknown command type: {cmd_type}", "WARNING")
 
                 await asyncio.sleep(0.5)
-            except Exception as e: # pylint: disable=broad-exception-caught
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 self.log(f"Error in queue listener: {e}", "ERROR")
                 await asyncio.sleep(1)
 
@@ -179,16 +216,16 @@ class FishBotClient(discord.Client):
 
             embed = discord.Embed(title="Server Status", color=discord.Color.blue())
             for s in shards:
-                status_icon = "🟢" if s['is_running'] else "🔴"
+                status_icon = "🟢" if s["is_running"] else "🔴"
                 embed.add_field(
                     name=f"{status_icon} {s['name']}",
                     value=f"Status: {s['status']}",
-                    inline=False
+                    inline=False,
                 )
 
             try:
                 await interaction.followup.send(embed=embed)
-            except Exception: # pylint: disable=broad-exception-caught
+            except Exception:  # pylint: disable=broad-exception-caught
                 pass
 
     async def _handle_control_response(self, data):
@@ -203,13 +240,12 @@ class FishBotClient(discord.Client):
             icon = "✅" if success else "❌"
             try:
                 await interaction.followup.send(f"{icon} Result: {output}")
-            except Exception: # pylint: disable=broad-exception-caught
+            except Exception:  # pylint: disable=broad-exception-caught
                 pass
 
     async def _handle_update_response(self, _):
         """Handle UPDATE_RESPONSE command."""
         # Not fully implemented
-        pass
 
     async def _handle_players_response(self, data):
         """Handle PLAYERS_RESPONSE command."""
@@ -225,7 +261,7 @@ class FishBotClient(discord.Client):
 
             try:
                 await interaction.followup.send(msg)
-            except Exception: # pylint: disable=broad-exception-caught
+            except Exception:  # pylint: disable=broad-exception-caught
                 pass
 
     async def _handle_send_chat(self, data):
@@ -236,53 +272,61 @@ class FishBotClient(discord.Client):
                 channel = self.get_channel(int(self.chat_channel_id))
                 if channel:
                     await channel.send(data)
-            except Exception as e: # pylint: disable=broad-exception-caught
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 self.log(f"Failed to send chat: {e}", "ERROR")
 
     async def _handle_update_presence(self, data):
         """Handle UPDATE_PRESENCE command."""
         # data = {"season": ..., "day": ..., "players": ..., "phase": ...}
         # Example: 🍂Autumn ☀️Day 7/20 or 🌙Idle
-        
+
         try:
             player_count = data.get("player_count", 0)
-            
+
             if player_count > 0:
                 season = data.get("season", "Unknown")
                 day = data.get("day", "?")
                 # Add emojis
                 season_emojis = {
-                    "Autumn": "🍂", "Winter": "❄️", "Spring": "🌸", "Summer": "☀️", "Unknown": "?"
+                    "Autumn": "🍂",
+                    "Winter": "❄️",
+                    "Spring": "🌸",
+                    "Summer": "☀️",
+                    "Unknown": "?",
                 }
-                phase_emojis = {
-                    "Day": "☀️", "Dusk": "🌄", "Night": "🌙", "Unknown": ""
-                }
-                
+                phase_emojis = {"Day": "☀️", "Dusk": "🌄", "Night": "🌙", "Unknown": ""}
+
                 s_emoji = season_emojis.get(season, "")
                 p_emoji = phase_emojis.get(data.get("phase"), "")
-                
+
                 status_text = f"{s_emoji}{season} {p_emoji}Day {day} (🧍{player_count})"
-                activity = discord.Activity(type=discord.ActivityType.unknown, name=status_text) 
+                activity = discord.Activity(
+                    type=discord.ActivityType.unknown, name=status_text
+                )
                 # discord.Game or similar might be better, or CustomActivity if supported?
                 # Using game for now as it's most standard
                 activity = discord.Game(name=status_text)
-                await self.change_presence(status=discord.Status.online, activity=activity)
-                
+                await self.change_presence(
+                    status=discord.Status.online, activity=activity
+                )
+
             else:
                 season = data.get("season", "Unknown")
                 day = data.get("day", "?")
                 status_text = f"Idle ({season} Day {day})"
                 activity = discord.Game(name=status_text)
-                await self.change_presence(status=discord.Status.idle, activity=activity)
-                
-        except Exception as e: # pylint: disable=broad-exception-caught
+                await self.change_presence(
+                    status=discord.Status.idle, activity=activity
+                )
+
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.log(f"Failed to update presence: {e}", "ERROR")
 
 
 def run_bot_process(token, command_queue, request_queue, log_queue):
     """Entry point for the separate process."""
     # Silence discord gateway logs
-    import logging
+
     logging.getLogger("discord").setLevel(logging.WARNING)
 
     # Setup intents
@@ -344,5 +388,5 @@ def run_bot_process(token, command_queue, request_queue, log_queue):
     # --- RUN ---
     try:
         client.run(token, log_handler=None)
-    except Exception as e: # pylint: disable=broad-exception-caught
+    except Exception as e:  # pylint: disable=broad-exception-caught
         log_queue.put(("ERROR", f"Bot crashed: {e}"))

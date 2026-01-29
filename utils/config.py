@@ -311,7 +311,7 @@ def load_env_keys() -> None:
                         line = line.strip()
                         if not line or line.startswith("#"):
                             continue
-                        
+
                         # Match KEY="VALUE" or KEY=VALUE
                         match = re.match(r'^\s*([^#\s=]+)\s*=\s*"?([^"]*)"?', line)
                         if match:
@@ -319,6 +319,6 @@ def load_env_keys() -> None:
                             # Only set if not already set by actual environment
                             if key not in os.environ:
                                 os.environ[key] = value
-                return # Stop after first found file
+                return  # Stop after first found file
             except (IOError, OSError) as e:
                 print(f"Warning: Could not read {p}: {e}", file=sys.stderr)

@@ -2,6 +2,7 @@
 """
 Plugin Interface Definition.
 """
+
 from abc import ABC, abstractmethod
 
 

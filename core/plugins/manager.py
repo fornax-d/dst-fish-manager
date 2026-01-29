@@ -3,6 +3,7 @@
 """
 Plugin Manager Implementation.
 """
+
 import os
 import importlib.util
 import logging
@@ -39,51 +40,61 @@ class PluginManager:
     def _load_plugin(self, plugin_name: str, file_path: str):
         """Dynamically loads a plugin module from file."""
         try:
-            spec = importlib.util.spec_from_file_location(f"plugins.{plugin_name}", file_path)
+            spec = importlib.util.spec_from_file_location(
+                f"plugins.{plugin_name}", file_path
+            )
             if not spec or not spec.loader:
-                logger.error(f"Could not load spec for {plugin_name}")
+                logger.error("Could not load spec for %s", plugin_name)
                 return
-            
+
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-            
+
             # Find class implementing IPlugin
             plugin_class = None
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
-                if isinstance(attr, type) and issubclass(attr, IPlugin) and attr is not IPlugin:
+                if (
+                    isinstance(attr, type)
+                    and issubclass(attr, IPlugin)
+                    and attr is not IPlugin
+                ):
                     plugin_class = attr
                     break
-            
+
             if plugin_class:
                 plugin_instance = plugin_class()
                 # Initialize
                 plugin_instance.on_load({}, self.manager_service, self.event_bus)
                 self.plugins[plugin_name] = plugin_instance
-                logger.info(f"Loaded plugin: {plugin_instance.name} v{plugin_instance.version}")
+                logger.info(
+                    "Loaded plugin: %s v%s",
+                    plugin_instance.name,
+                    plugin_instance.version,
+                )
             else:
-                logger.warning(f"No IPlugin implementation found in {plugin_name}")
+                logger.warning("No IPlugin implementation found in %s", plugin_name)
 
         except Exception as e:
-            logger.error(f"Failed to load plugin {plugin_name}: {e}", exc_info=True)
+            logger.error("Failed to load plugin %s: %s", plugin_name, e, exc_info=True)
 
     def start_all(self):
         """Starts all loaded plugins."""
         for name, plugin in self.plugins.items():
             try:
                 plugin.on_start()
-                logger.info(f"Started plugin: {name}")
+                logger.info("Started plugin: %s", name)
             except Exception as e:
-                logger.error(f"Error starting plugin {name}: {e}")
+                logger.error("Error starting plugin %s: %s", name, e)
 
     def stop_all(self):
         """Stops all loaded plugins."""
         for name, plugin in self.plugins.items():
             try:
                 plugin.on_stop()
-                logger.info(f"Stopped plugin: {name}")
+                logger.info("Stopped plugin: %s", name)
             except Exception as e:
-                logger.error(f"Error stopping plugin {name}: {e}")
+                logger.error("Error stopping plugin %s: %s", name, e)
 
     def update_all(self):
         """Updates all loaded plugins (called periodically)."""
@@ -91,4 +102,4 @@ class PluginManager:
             try:
                 plugin.update()
             except Exception as e:
-                logger.error(f"Error updating plugin {plugin.name}: {e}")
+                logger.error("Error updating plugin %s: %s", plugin.name, e)

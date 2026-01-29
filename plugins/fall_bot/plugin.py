@@ -1,3 +1,10 @@
+"""
+Fall Bot Plugin integration.
+
+This module provides the DiscordBotPlugin class which integrates a Discord bot
+into the existing ManagerService architecture.
+"""
+
 import sys
 import os
 import logging
@@ -27,6 +34,8 @@ logger = logging.getLogger(__name__)
 class DiscordBotPlugin(IPlugin):
     """Fall Bot Plugin integration."""
 
+    # pylint: disable=too-many-instance-attributes
+
     def __init__(self):
         super().__init__()
         self.name = "fall.bot Integration"
@@ -43,12 +52,11 @@ class DiscordBotPlugin(IPlugin):
         self.sent_messages = collections.deque(maxlen=20)
         self.last_status_update = 0
 
-
     def on_load(self, config, manager_service, event_bus=None):
         self.manager = manager_service
         self.event_bus = event_bus
-        # We can load specific config here if needed, but the bot process will read env vars directly
-        pass
+        # We can load specific config here if needed,
+        # but the bot process will read env vars directly
 
     def on_start(self):
         token = os.getenv("DISCORD_BOT_TOKEN")
@@ -77,7 +85,7 @@ class DiscordBotPlugin(IPlugin):
                 EventType.CHAT_MESSAGE, self._on_chat_event
             )
 
-        logger.info(f"Discord Bot process started with PID {self.process.pid}")
+        logger.info("Discord Bot process started with PID %s", self.process.pid)
 
     def on_stop(self):
         # Unsubscribe
@@ -100,20 +108,13 @@ class DiscordBotPlugin(IPlugin):
         try:
             while True:
                 record = self.log_queue.get_nowait()
-                # We could integrate this into the main app logger or a specific UI panel
-                # For now, we rely on the fact that if we use a customized logging handler in the TUI,
-                # we might need to forward these.
-                # But for simplicity, we let the logger handle it if configured, or just ignore for now
-                # to avoid duplicate logs in stdout if both print.
-                # ACTUALLY: The TUI captures stdout/stderr/logging.
-                # We should probably log them to the main logger with a prefix.
                 level, msg = record
                 if level == "INFO":
-                    logger.info(f"[Discord] {msg}")
+                    logger.info("[Discord] %s", msg)
                 elif level == "ERROR":
-                    logger.error(f"[Discord] {msg}")
+                    logger.error("[Discord] %s", msg)
                 elif level == "WARNING":
-                    logger.warning(f"[Discord] {msg}")
+                    logger.warning("[Discord] %s", msg)
         except queue.Empty:
             pass
 
@@ -121,70 +122,31 @@ class DiscordBotPlugin(IPlugin):
         current_time = time.time()
         if current_time - self.last_status_update > 30:
             self.last_status_update = current_time
-            
+
             try:
-                # We need data from StatusManager. 
-                # The manager_service should have access or be able to route.
-                # Assuming manager_service has a reference to StatusManager or we can get it.
-                # In this architecture, manager_service usually holds references.
-                # Let's check how we access StatusManager.
-                # In `core/plugins/manager.py`, `manager_service` is passed.
-                # If `manager_service` is `GameService` or similar, it might have `status_manager`.
-                # If we assume `self.manager` is `ManagerService` which wraps everything...
-                # Let's try to access it via `self.manager.status_manager` if it exists, 
-                # or `self.manager.game_service.status_manager`.
-                # Based on previous context, `StatusManager` is a feature.
-                # Let's check if we can get it.
-                
-                # If we can't find it easily, we might need to rely on what `get_server_status` returns.
-                # self.manager.get_server_status() calls status_manager internally?
-                # In existing `plugin.py`: `self.manager.get_shards()` is used.
-                
-                # Let's use `self.manager.get_server_status("Master")` as a fallback or if it gives us what we need.
-                # But `StatusManager.get_server_stats_summary()` is the best one.
-                
-                # Let's assume self.manager has access to status_manager.
-                # If not, we might need to import the singleton if it is one, or look harder.
-                # Looking at `manager.py`, it receives `manager_service`.
-                # Let's try to find where `StatusManager` is instantiated.
-                # Usually `app.py` or `game_service.py`.
-                
-                # Safe bet: Use `self.manager.get_server_status("Master")` to get basic info.
-                # But we want Season/Day which `_aggregate_server_status` provides.
-                # `self.manager.get_server_status()` seems to be a method on `manager_service`.
-                # Let's look at `manager_service` definition if possible. 
-                # Actually, I don't have `manager_service.py` open. 
-                # But `plugin.py` calls `self.manager.get_shards()`.
-                
-                # Let's try to use `self.manager.status_manager` if available.
                 status_manager = getattr(self.manager, "status_manager", None)
                 if status_manager:
                     stats = status_manager.get_server_stats_summary()
-                    # stats = {'server_stats': {'player_count': ..., 'season': ..., 'day': ..., 'phase': ...}, ...}
+                    # stats = {'server_stats': {'player_count': ..., 'season': ...,
+                    #           'day': ..., 'phase': ...}, ...}
                     server_stats = stats.get("server_stats", {})
-                    
-                    self.command_queue.put(("UPDATE_PRESENCE", {
-                        "season": server_stats.get("season"),
-                        "day": server_stats.get("day"),
-                        "phase": server_stats.get("server_stats", {}).get("phase") if "phase" not in server_stats else server_stats.get("phase"),
-                        # Wait, get_server_stats_summary returns flat day/season but phase is inside shards?
-                        # Let's re-read StatusManager.get_server_stats_summary
-                        # It gets season/day from combined_status.
-                        # Combined status has phase.
-                        # But get_server_stats_summary constructs a dict.
-                        # It puts: "day": day, "season": season, "shard_status": ...
-                        # It MISSES "phase" in top level of `server_stats`.
-                        # We might need to dig it from `shard_status` or fallback.
-                        # Or update StatusManager? 
-                        # I prefer not to touch StatusManager if possible to keep scope small.
-                        # I can get phase from `server_stats["shard_status"]["Master"]["phase"]`.
-                        
-                        "player_count": server_stats.get("player_count"),
-                        "phase": server_stats.get("shard_status", {}).get("Master", {}).get("phase", "Unknown")
-                    }))
-                
-            except Exception as e:
-                logger.error(f"Error sending presence update: {e}")
+
+                    self.command_queue.put(
+                        (
+                            "UPDATE_PRESENCE",
+                            {
+                                "season": server_stats.get("season"),
+                                "day": server_stats.get("day"),
+                                "player_count": server_stats.get("player_count"),
+                                "phase": server_stats.get("shard_status", {})
+                                .get("Master", {})
+                                .get("phase", "Unknown"),
+                            },
+                        )
+                    )
+
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logger.error("Error sending presence update: %s", e)
 
         # 2. Consume Request Queue (Commands from Bot -> Manager)
         try:
@@ -196,21 +158,8 @@ class DiscordBotPlugin(IPlugin):
 
     def _handle_request(self, req_type, data):
         """Handle requests from the bot process."""
+        # pylint: disable=too-many-locals, too-many-branches
         if req_type == "GET_STATUS":
-            # Bot wants status, we send it back
-            # data is execution_id usually or just None if we use a different flow.
-            # But the bot might wait for a response?
-            # Creating a synchronous 'ask' across processes is complex.
-            # Simplified flow: Bot asks for status -> App sends 'UPDATE_STATUS' command back with data.
-
-            # However, for 'GET_STATUS', the bot usually needs it *now* to reply to interaction.
-            # If we want to be fully async, the bot defers interaction, asks us, we process, we send back.
-            # For this MVP, let's implement the 'Defer -> Ask -> Reply' flow in the bot.
-
-            # Wait, the ManagerService has access to shm/systemd which is fast.
-            # BUT we are in the main loop update() here.
-
-            # Let's get the status
             shards = self.manager.get_shards()
             status_data = []
             for s in shards:
@@ -250,9 +199,7 @@ class DiscordBotPlugin(IPlugin):
             # This returns (success, stdout, stderr)
             # control_all_shards or control_shard
             if len(target_shards) > 1:
-                success, _, err = self.manager.control_all_shards(
-                    action, target_shards
-                )
+                success, _, err = self.manager.control_all_shards(action, target_shards)
             elif len(target_shards) == 1:
                 success, _, err = self.manager.control_shard(
                     target_shards[0].name, action
@@ -275,17 +222,8 @@ class DiscordBotPlugin(IPlugin):
             )
 
         elif req_type == "UPDATE_SERVER":
-            # Execute update
-            # run_updater returns Popen object?
-            # manager_service.py says: return self.game_service.run_updater()
-            # We should probably run this in background or just kick it off.
-            # The TUI handles update logs via `_perform_update_task`.
-            # Here we just kick it off.
-
             try:
                 _ = self.manager.run_updater()
-                # We can't easily capture output here without blocking or complex thread handling.
-                # Let's just say it started.
                 self.command_queue.put(
                     (
                         "CONTROL_RESPONSE",
@@ -296,7 +234,7 @@ class DiscordBotPlugin(IPlugin):
                         },
                     )
                 )
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 self.command_queue.put(
                     (
                         "CONTROL_RESPONSE",
@@ -331,28 +269,9 @@ class DiscordBotPlugin(IPlugin):
 
     def _on_chat_event(self, event):
         """Handle chat message from the game."""
+        # pylint: disable=too-many-branches
         if not self.command_queue:
             return
-
-        # event.data is likely a list of recent messages or a single new message?
-        # Based on previous code: event.data is list of all recent lines.
-        # We need to filter for new lines.
-        # Actually, let's look at `ui/app.py` or where the event is emitted.
-        # `manager_service.get_chat_logs` returns list of str.
-        # The previous bot manager kept 'previous_chat_messages' to find diffs.
-        # The Event `CHAT_MESSAGE` in `ui/app.py` seems to be just a signal that update happened?
-        # Let's check `_on_chat_message` in app.py. It just `request_redraw()`.
-        # So the event might NOT contain the data, or it might contain the full log.
-        # If it contains full log, we need a history tracking here.
-
-        # Checking `core/background/coordinator.py` would confirm what is sent.
-        # Assuming for now event.data is the list of logs.
-
-        # Simplification: We need state to track what we already sent.
-        # We can store `last_log_line` or similar.
-
-        pass  # To be implemented fully, we need to handle the log diffing properly.
-        # For now, let's assume we receive the full list and we need to simple diff.
 
         chat_logs = event.data
         if not chat_logs or not isinstance(chat_logs, list):
@@ -368,55 +287,55 @@ class DiscordBotPlugin(IPlugin):
 
         new_msgs = []
         for msg in chat_logs:
-            if msg not in self.last_chat_logs:
-                # Check filters
-                if "[Discord]" in msg:
+            if msg in self.last_chat_logs:
+                continue
+
+            # Check filters
+            if "[Discord]" in msg:
+                continue
+            if " [System Message]" in msg:
+                continue
+            if " [Whisper]" in msg:
+                continue
+
+            tag_emojis = {
+                "Say": "",
+                "Announcement": "📢",
+                "Join Announcement": "📥",
+                "Leave Announcement": "📤",
+                "Death Announcement": "💀",
+                "Resurrect Announcement": "💖",
+                "Skin Announcement": "🎁",
+                "Vote Announcement": "🗳️",
+            }
+
+            match = re.search(
+                r":\s*\[(Say|.*?Announcement)\]\s*(?:\([^)]*\))?\s*(.*)", msg
+            )
+            if match:
+                tag = match.group(1)
+                content = match.group(2).strip()
+
+                # Check if this is an echo of a message we just sent
+                if content in self.sent_messages:
+                    self.sent_messages.remove(content)
                     continue
-                if " [System Message]" in msg:
-                    continue
-                if " [Whisper]" in msg:
-                    continue
-                # Extract user?
-                # Extract Name: Message using regex
-                # Supported tags: [Say], [Announcement], [Death Announcement], etc.
-                tag_emojis = {
-                    "Say": "",
-                    "Announcement": "📢",
-                    "Join Announcement": "📥",
-                    "Leave Announcement": "📤",
-                    "Death Announcement": "💀",
-                    "Resurrect Announcement": "💖",
-                    "Skin Announcement": "🎁",
-                    "Vote Announcement": "🗳️",
-                }
-                
-                # Regex to match [Tag] (ID) Content
-                # We target the tag after the first colon (timestamp separator)
-                match = re.search(r":\s*\[(Say|.*?Announcement)\]\s*(?:\([^)]*\))?\s*(.*)", msg)
-                if match:
-                    tag = match.group(1)
-                    content = match.group(2).strip()
-                    
-                    # Check if this is an echo of a message we just sent
-                    if content in self.sent_messages:
-                        self.sent_messages.remove(content)
-                        continue
-                        
-                    emoji = tag_emojis.get(tag, "")
-                    
-                    full_msg = f"{emoji} {content}".strip() if emoji else content
-                    new_msgs.append(full_msg)
-                    
-                    # Optimization: Force status update on Join
-                    if tag == "Join Announcement":
-                        try:
-                            # Trigger game to dump status immediately
-                            if hasattr(self.manager, "status_manager"):
-                                self.manager.status_manager.request_status_update("Master")
-                            # Reset last status update time to force bot update in next loop
-                            self.last_status_update = 0
-                        except Exception as e:
-                            logger.error(f"Failed to force status update on join: {e}")
+
+                emoji = tag_emojis.get(tag, "")
+
+                full_msg = f"{emoji} {content}".strip() if emoji else content
+                new_msgs.append(full_msg)
+
+                # Optimization: Force status update on Join
+                if tag == "Join Announcement":
+                    try:
+                        # Trigger game to dump status immediately
+                        if hasattr(self.manager, "status_manager"):
+                            self.manager.status_manager.request_status_update("Master")
+                        # Reset last status update time to force bot update in next loop
+                        self.last_status_update = 0
+                    except Exception as e:  # pylint: disable=broad-exception-caught
+                        logger.error("Failed to force status update on join: %s", e)
 
         self.last_chat_logs = chat_logs[-100:]  # Keep last 100
 
