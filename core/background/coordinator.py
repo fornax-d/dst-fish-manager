@@ -70,6 +70,7 @@ class BackgroundCoordinator:
 
     def _background_loop(self) -> None:
         """Main background loop for periodic updates."""
+        # pylint: disable=too-many-branches
         while self._running:
             current_time = time.time()
             state = self.state_manager.state
@@ -120,16 +121,14 @@ class BackgroundCoordinator:
 
             # Status poll request (Dynamic Interval)
             # If players > 0: 15s. If players == 0: 300s (5min).
-            # But relying on stale server_status might be risky if we only update it via this poll.
-            # However, `server_status` is also updated by `_aggregate_server_status` inside StatusManager.
-            
+
             # Check if any players online in cached status
             has_players = False
             if state.server_status.players:
                 has_players = True
-            
+
             poll_interval = 15.0 if has_players else 300.0
-            
+
             if current_time - state.timing_state.last_status_poll_time > poll_interval:
                 if (
                     not state.ui_state.viewer_state.log_viewer_active
@@ -144,20 +143,23 @@ class BackgroundCoordinator:
                 if log_path and log_path.exists():
                     try:
                         stat = os.stat(log_path)
-                        if (stat.st_size != state.timing_state.last_chat_file_size or 
-                            stat.st_mtime != state.timing_state.last_chat_file_mtime):
-                            
+                        if (
+                            stat.st_size != state.timing_state.last_chat_file_size
+                            or stat.st_mtime != state.timing_state.last_chat_file_mtime
+                        ):
                             chat_logs = ChatManager.get_chat_logs(50)
                             state.ui_state.cached_chat_logs = chat_logs
-                            self.event_bus.publish(Event(EventType.CHAT_MESSAGE, chat_logs))
-                            
+                            self.event_bus.publish(
+                                Event(EventType.CHAT_MESSAGE, chat_logs)
+                            )
+
                             self.state_manager.update_timing(
                                 last_chat_file_size=stat.st_size,
-                                last_chat_file_mtime=stat.st_mtime
+                                last_chat_file_mtime=stat.st_mtime,
                             )
-                    except Exception: # pylint: disable=broad-exception-caught
+                    except Exception:  # pylint: disable=broad-exception-caught
                         pass
-                
+
                 self.state_manager.update_timing(last_chat_read_time=current_time)
 
             time.sleep(0.1)

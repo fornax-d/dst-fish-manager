@@ -8,13 +8,13 @@ import time
 
 from core.background.coordinator import BackgroundCoordinator
 from core.events.bus import Event, EventBus, EventType
+from core.plugins.manager import PluginManager
 from core.state.app_state import ServerStatus, StateManager
 from features.mods.mod_manager import ModManager
 from features.shards.shard_manager import ShardManager
 from services.manager_service import ManagerService
 from ui.input.handler import InputHandler
 from ui.rendering.renderer import Renderer
-from core.plugins.manager import PluginManager
 
 
 class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-methods
@@ -24,8 +24,12 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
         self.stdscr = stdscr
         self.state_manager = StateManager()
         self.event_bus = EventBus()
-        self.manager_service = ManagerService()
+
         self.mod_manager = ModManager()
+        self.status_manager = self.mod_manager.status_manager
+
+        self.manager_service = ManagerService(self.status_manager)
+
         self.shard_manager = ShardManager()
         self.plugin_manager = PluginManager(self.manager_service, self.event_bus)
 
@@ -47,7 +51,6 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
         self.renderer._app = self
 
         # Start server status monitoring
-        self.status_manager = self.mod_manager.status_manager
         self.status_manager.start_monitoring(update_interval=10)
 
         self.background_coordinator = BackgroundCoordinator(
@@ -158,7 +161,7 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
 
             # Small sleep to prevent 100% CPU
             time.sleep(0.01)
-            
+
             # Update plugins
             self.plugin_manager.update_all()
 
@@ -264,7 +267,9 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
         """Prompt for chat message."""
         message = self.renderer.popup_manager.text_input_popup("Chat:", width=60)
         if message:
-            success, _ = self.manager_service.send_chat_message("Master", f"[SSH God] {message}")
+            success, _ = self.manager_service.send_chat_message(
+                "Master", f"[SSH God] {message}"
+            )
             if not success:
                 # Could show error popup here
                 pass

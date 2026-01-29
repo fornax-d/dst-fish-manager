@@ -433,10 +433,12 @@ class StatusManager:  # pylint: disable=too-many-instance-attributes
                 try:
                     name = proc.info.get("name", "")
                     cmdline = " ".join(proc.info.get("cmdline") or [])
-                    
+
                     # Match both generic and nullrenderer binaries
-                    if ("dontstarve_dedicated_server" in name or 
-                        "dontstarve_dedicated_server" in cmdline):
+                    if (
+                        "dontstarve_dedicated_server" in name
+                        or "dontstarve_dedicated_server" in cmdline
+                    ):
                         total_memory += proc.memory_info().rss / 1024 / 1024  # MB
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue

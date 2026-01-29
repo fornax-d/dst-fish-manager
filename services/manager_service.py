@@ -16,10 +16,11 @@ from utils.config import Shard, write_cluster_token
 class ManagerService:
     """Orchestrates all interactions with systemd and game files."""
 
-    def __init__(self):
+    def __init__(self, status_manager: "StatusManager"):
         self.game_service = GameService()
         self.systemd_service = SystemDService()
         self.shard_manager = ShardManager()
+        self.status_manager = status_manager
 
     def get_shards(self) -> List[Shard]:
         """
@@ -87,8 +88,8 @@ class ManagerService:
 
     def get_server_status(self, shard_name: str = "Master") -> Dict:
         """Gets server status information."""
-        return StatusManager.get_server_status(shard_name)
+        return self.status_manager.get_server_status(shard_name)
 
     def request_status_update(self, shard_name: str = "Master") -> bool:
         """Requests status update from server."""
-        return StatusManager.request_status_update(shard_name)
+        return self.status_manager.request_status_update(shard_name)
