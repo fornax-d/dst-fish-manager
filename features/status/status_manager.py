@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from features.chat.chat_manager import ChatManager
+from services.systemd_service import SystemDService
 from utils.config import get_game_config, read_desired_shards
 
 try:
@@ -71,8 +72,25 @@ class StatusManager:  # pylint: disable=too-many-instance-attributes
         }
         all_players = {}
 
+        # Check which shards are actually running
+        systemd_service = SystemDService()
+        running_shards = systemd_service.get_systemd_instances("list-units", "active")
+
         for current_shard in shard_names:
+            if current_shard not in running_shards:
+                # Shard is not running, return empty status
+                combined_status["shards"][current_shard] = {
+                    "season": "Unknown",
+                    "day": "Unknown",
+                    "days_left": "Unknown",
+                    "phase": "Unknown",
+                    "players": [],
+                    "server_running": False,
+                }
+                continue
+
             shard_data, players_dict = self._parse_shard_log(current_shard)
+            shard_data["server_running"] = True
             combined_status["shards"][current_shard] = shard_data
             all_players.update(players_dict)
 

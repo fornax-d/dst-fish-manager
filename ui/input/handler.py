@@ -63,7 +63,11 @@ class InputHandler:
         state = self.state_manager.state
 
         while True:
-            key = stdscr.getch()
+            try:
+                key = stdscr.getch()
+            except curses.error:
+                key = -1
+
             if key == -1:
                 break
 
