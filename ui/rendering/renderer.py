@@ -37,8 +37,16 @@ class Renderer:  # pylint: disable=too-few-public-methods
     def render(self) -> None:
         """Main render method."""
 
-        # Check minimum terminal size
-        h, w = self.stdscr.getmaxyx()
+        # Check minimum terminal size safely
+        try:
+            h, w = self.stdscr.getmaxyx()
+        except curses.error:
+            return
+
+        # If detached or invalid size, skip rendering
+        if h <= 0 or w <= 0:
+            return
+
         if h < 12 or w < 40:
             self._render_too_small()
             return

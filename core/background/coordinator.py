@@ -24,11 +24,13 @@ class BackgroundCoordinator:
         event_bus: EventBus,
         manager_service,
         status_manager: StatusManager,
-    ):
+        plugin_manager=None,
+    ):  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self.state_manager = state_manager
         self.event_bus = event_bus
         self.manager_service = manager_service
         self.status_manager = status_manager
+        self.plugin_manager = plugin_manager
         self._running = False
         self._background_thread = None
 
@@ -75,91 +77,99 @@ class BackgroundCoordinator:
             current_time = time.time()
             state = self.state_manager.state
 
-            # Periodic shard refresh (every 2 seconds)
-            if current_time - state.timing_state.last_refresh_time > 2.0:
-                if (
-                    not state.ui_state.viewer_state.log_viewer_active
-                    and not state.ui_state.viewer_state.mods_viewer_active
-                ):
-                    shard_manager = ShardManager()
-                    new_shards = shard_manager.get_shards()
-                    self.state_manager.update_shards(new_shards)
+            self._refresh_shards(current_time, state)
+            self._refresh_server_status(current_time, state)
+            self._poll_status(current_time, state)
+            self._refresh_chat_logs(current_time, state)
 
-                    # Check master offline status
-                    master = next((s for s in new_shards if s.name == "Master"), None)
-                    if master and master.is_running:
-                        state.server_status.master_offline_count = 0
-                    else:
-                        state.server_status.master_offline_count += 1
-                        if state.server_status.master_offline_count >= 3:
-                            self.state_manager.update_server_status(
-                                {
-                                    "season": "---",
-                                    "day": "---",
-                                    "days_left": "---",
-                                    "phase": "---",
-                                    "players": [],
-                                }
-                            )
-
-                    self.event_bus.publish(Event(EventType.SHARD_REFRESH, new_shards))
-                    self.state_manager.update_timing(last_refresh_time=current_time)
-                    self.state_manager.request_redraw()
-
-            # Server status refresh (every 5 seconds)
-            if current_time - state.timing_state.last_status_refresh_time > 5.0:
-                new_status = self.status_manager.get_server_status()
-                shards = self.state_manager.get_shards_copy()
-                master = next((s for s in shards if s.name == "Master"), None)
-                if master and master.is_running:
-                    self.state_manager.update_server_status(new_status)
-                    self.event_bus.publish(
-                        Event(EventType.SERVER_STATUS_UPDATE, new_status)
-                    )
-                self.state_manager.update_timing(last_status_refresh_time=current_time)
-                self.state_manager.request_redraw()
-
-            # Status poll request (Dynamic Interval)
-            # If players > 0: 15s. If players == 0: 300s (5min).
-
-            # Check if any players online in cached status
-            has_players = False
-            if state.server_status.players:
-                has_players = True
-
-            poll_interval = 15.0 if has_players else 300.0
-
-            if current_time - state.timing_state.last_status_poll_time > poll_interval:
-                if (
-                    not state.ui_state.viewer_state.log_viewer_active
-                    and not state.ui_state.is_working
-                ):
-                    self.status_manager.request_status_update()
-                self.state_manager.update_timing(last_status_poll_time=current_time)
-
-            # Chat logs refresh (every 0.2 seconds)
-            if current_time - state.timing_state.last_chat_read_time > 0.2:
-                log_path = ChatManager.get_chat_log_path()
-                if log_path and log_path.exists():
-                    try:
-                        stat = os.stat(log_path)
-                        if (
-                            stat.st_size != state.timing_state.last_chat_file_size
-                            or stat.st_mtime != state.timing_state.last_chat_file_mtime
-                        ):
-                            chat_logs = ChatManager.get_chat_logs(50)
-                            state.ui_state.cached_chat_logs = chat_logs
-                            self.event_bus.publish(
-                                Event(EventType.CHAT_MESSAGE, chat_logs)
-                            )
-
-                            self.state_manager.update_timing(
-                                last_chat_file_size=stat.st_size,
-                                last_chat_file_mtime=stat.st_mtime,
-                            )
-                    except Exception:  # pylint: disable=broad-exception-caught
-                        pass
-
-                self.state_manager.update_timing(last_chat_read_time=current_time)
+            # Update plugins
+            if self.plugin_manager:
+                self.plugin_manager.update_all()
 
             time.sleep(0.1)
+
+    def _refresh_shards(self, current_time: float, state) -> None:
+        """Periodic shard refresh (every 2 seconds)."""
+        if current_time - state.timing_state.last_refresh_time > 2.0:
+            if (
+                not state.ui_state.viewer_state.log_viewer_active
+                and not state.ui_state.viewer_state.mods_viewer_active
+            ):
+                shard_manager = ShardManager()
+                new_shards = shard_manager.get_shards()
+                self.state_manager.update_shards(new_shards)
+
+                # Check master offline status
+                master = next((s for s in new_shards if s.name == "Master"), None)
+                if master and master.is_running:
+                    state.server_status.master_offline_count = 0
+                else:
+                    state.server_status.master_offline_count += 1
+                    if state.server_status.master_offline_count >= 3:
+                        self.state_manager.update_server_status(
+                            {
+                                "season": "---",
+                                "day": "---",
+                                "days_left": "---",
+                                "phase": "---",
+                                "players": [],
+                            }
+                        )
+
+                self.event_bus.publish(Event(EventType.SHARD_REFRESH, new_shards))
+                self.state_manager.update_timing(last_refresh_time=current_time)
+                self.state_manager.request_redraw()
+
+    def _refresh_server_status(self, current_time: float, state) -> None:
+        """Server status refresh (every 5 seconds)."""
+        if current_time - state.timing_state.last_status_refresh_time > 5.0:
+            new_status = self.status_manager.get_server_status()
+            shards = self.state_manager.get_shards_copy()
+            master = next((s for s in shards if s.name == "Master"), None)
+            if master and master.is_running:
+                self.state_manager.update_server_status(new_status)
+                self.event_bus.publish(
+                    Event(EventType.SERVER_STATUS_UPDATE, new_status)
+                )
+            self.state_manager.update_timing(last_status_refresh_time=current_time)
+            self.state_manager.request_redraw()
+
+    def _poll_status(self, current_time: float, state) -> None:
+        """Status poll request (Dynamic Interval)."""
+        # If players > 0: 15s. If players == 0: 300s (5min).
+
+        # Check if any players online in cached status
+        has_players = bool(state.server_status.players)
+        poll_interval = 15.0 if has_players else 300.0
+
+        if current_time - state.timing_state.last_status_poll_time > poll_interval:
+            if (
+                not state.ui_state.viewer_state.log_viewer_active
+                and not state.ui_state.is_working
+            ):
+                self.status_manager.request_status_update()
+            self.state_manager.update_timing(last_status_poll_time=current_time)
+
+    def _refresh_chat_logs(self, current_time: float, state) -> None:
+        """Chat logs refresh (every 0.2 seconds)."""
+        if current_time - state.timing_state.last_chat_read_time > 0.2:
+            log_path = ChatManager.get_chat_log_path()
+            if log_path and log_path.exists():
+                try:
+                    stat = os.stat(log_path)
+                    if (
+                        stat.st_size != state.timing_state.last_chat_file_size
+                        or stat.st_mtime != state.timing_state.last_chat_file_mtime
+                    ):
+                        chat_logs = ChatManager.get_chat_logs(50)
+                        state.ui_state.cached_chat_logs = chat_logs
+                        self.event_bus.publish(Event(EventType.CHAT_MESSAGE, chat_logs))
+
+                        self.state_manager.update_timing(
+                            last_chat_file_size=stat.st_size,
+                            last_chat_file_mtime=stat.st_mtime,
+                        )
+                except Exception:  # pylint: disable=broad-exception-caught
+                    pass
+
+            self.state_manager.update_timing(last_chat_read_time=current_time)

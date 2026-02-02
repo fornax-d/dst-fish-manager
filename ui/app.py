@@ -4,6 +4,7 @@
 """Main TUI application."""
 
 import curses
+import signal
 import time
 
 from core.background.coordinator import BackgroundCoordinator
@@ -58,6 +59,7 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
             self.event_bus,
             self.manager_service,
             self.status_manager,
+            self.plugin_manager,
         )
 
         # Setup callbacks
@@ -76,10 +78,23 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
         self.plugin_manager.discover_plugins()
         self.plugin_manager.start_all()
 
+        # Register signal handler for resize
+        signal.signal(signal.SIGWINCH, self._handle_sigwinch)
+
+    def _handle_sigwinch(self, _signum, _frame):
+        """Handle window resize signal."""
+        # This will unblock getch and cause the loop to iterate
+        try:
+            curses.endwin()
+            self.state_manager.request_redraw()
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+
     def _setup_curses(self) -> None:
         """Setup curses settings."""
         curses.curs_set(0)
-        self.stdscr.nodelay(1)
+        # Use timeout instead of nodelay to reduce CPU usage and handle signals better
+        self.stdscr.timeout(100)
 
     def _setup_callbacks(self) -> None:
         """Setup input handler callbacks."""
@@ -155,15 +170,16 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
             if state.ui_state.need_redraw and (
                 current_time - state.timing_state.last_draw_time > 0.033
             ):
-                self.renderer.render()
+                try:
+                    self.renderer.render()
+                except curses.error:
+                    pass
+                except Exception:  # pylint: disable=broad-exception-caught
+                    # Log error but keep running
+                    pass
+
                 self.state_manager.clear_redraw_flag()
                 self.state_manager.update_timing(last_draw_time=current_time)
-
-            # Small sleep to prevent 100% CPU
-            time.sleep(0.01)
-
-            # Update plugins
-            self.plugin_manager.update_all()
 
         # Cleanup
         self.background_coordinator.stop()
@@ -287,8 +303,13 @@ class TUIApp:  # pylint: disable=too-many-instance-attributes, too-few-public-me
 
     def _handle_resize(self) -> None:
         """Handle terminal resize."""
+        if hasattr(curses, "update_lines_cols"):
+            curses.update_lines_cols()
+
         self.stdscr.clear()
+        self.stdscr.refresh()
         self.renderer.window_manager.create_layout()
+        self.state_manager.request_redraw()
 
     def _toggle_mod(self) -> None:
         """Toggle mod enabled state."""
